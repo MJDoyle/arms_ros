@@ -1,0 +1,9 @@
+string model_file
+string substrate_file
+# Put additional options in here later
+---
+bool success
+AssemblyStep[] steps
+---
+# Feedback message strucure goes here
+float32 progress
