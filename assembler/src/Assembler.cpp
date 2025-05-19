@@ -13,7 +13,7 @@
 
 #include "yaml-cpp/yaml.h"
 
-#include <ament_index_cpp/get_package_share_directory.hpp>
+// #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -26,11 +26,11 @@
 Assembler::Assembler()
 {
     //TODO
-    output_path_ = ament_index_cpp::get_package_share_directory("assembler") + "/../../../../";
-    input_path_ = ament_index_cpp::get_package_share_directory("assembler") + "/../../../../";
+    // output_path_ = ament_index_cpp::get_package_share_directory("assembler") + "/../../../../";
+    // input_path_ = ament_index_cpp::get_package_share_directory("assembler") + "/../../../../";
 
-    std::cout << "Ouput path: " << output_path_ << std::endl;
-    std::cout << "Input path: " << input_path_ << std::endl;
+    // std::cout << "Ouput path: " << output_path_ << std::endl;
+    // std::cout << "Input path: " << input_path_ << std::endl;
 
     std::shared_ptr<Assembly> assembly = std::shared_ptr<Assembly>(new Assembly());
 }

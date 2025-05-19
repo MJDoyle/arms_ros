@@ -13,6 +13,8 @@
   <depend>yaml-cpp</depend>
   <depend>ament_index_cpp</depend>
   <depend>opencascade</depend>
+  <depend>assembler_msgs</depend>
+  <depend>rclcpp_components</depend>
 
   <build_depend>assimp</build_depend>
 

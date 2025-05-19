@@ -26,8 +26,14 @@ message(STATUS "CGAL libraries: ${CGAL_LIBRARIES}")
 include_directories((${ASSIMP_INCLUDE_DIR}))
 
 add_library(assembler_node SHARED
-  src/assembler_node.cpp)
+  src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp)
+target_link_libraries(assembler_node
+  ${CGAL_LIBRARIES}
+  ${OpenCASCADE_LIBRARIES}
+  yaml-cpp::yaml-cpp
+)
 target_include_directories(assembler_node PRIVATE
+  ${CGAL_INCLUDE_DIRS}
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_compile_definitions(assembler_node
@@ -39,11 +45,11 @@ ament_target_dependencies(assembler_node
   rclcpp
   rclcpp_action
   rclcpp_components)
-rclcpp_components_register_node(assembler_node PLUGIN "custom_action_cpp::process_model" EXECUTABLE process_model)
+rclcpp_components_register_node(assembler_node PLUGIN "AssemblerNode" EXECUTABLE assembler_action_server)
 
-include_directories(include)
+# include_directories(include)
 
-link_directories("/usr/lib")
+# link_directories("/usr/lib")
 
 # Declare the package
 # add_executable(assembler_node src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp)
@@ -57,26 +63,28 @@ link_directories("/usr/lib")
 #   visualization_msgs
 # )
 
-target_include_directories(assembler_node
-  PRIVATE
-  ${CGAL_INCLUDE_DIRS}
-)
+# target_include_directories(assembler_node
+#   PRIVATE
+#   ${CGAL_INCLUDE_DIRS}
+# )
 
 
 # Link CGAL, Assimp, and OpenGL libraries
-target_link_libraries(assembler_node
-  ${CGAL_LIBRARIES}
-  ${OpenCASCADE_LIBRARIES}
-  yaml-cpp::yaml-cpp
-)
+# target_link_libraries(assembler_node
+#   ${CGAL_LIBRARIES}
+#   ${OpenCASCADE_LIBRARIES}
+#   yaml-cpp::yaml-cpp
+# )
 
 # # Install executables and libraries
 # install(TARGETS assembler_node
 #   DESTINATION lib/${PROJECT_NAME}
 # )
 
+# ament_export_targets(export_assembler_node)
 install(TARGETS
   assembler_node
+  # EXPORT export_assembler_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)

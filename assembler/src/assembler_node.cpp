@@ -1,7 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <visualization_msgs/msg/marker.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include "assembler/Assembler.hpp"
 #include "assembler/Assembly.hpp"
@@ -16,15 +16,14 @@
 
 #include "assembler/visibility_control.h"
 
-class AssemblerNode : public rclcpp::Node
-{
+class AssemblerNode : public rclcpp::Node {
 public:
-  PROCESS_MODEL_CPP_PUBLIC
-  explicit AssemblerNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-      : Node("model_loader"), loader_(std::make_shared<ModelLoader>()),
-        assembler_(std::make_shared<Assembler>())
-  {
-    RCLCPP_INFO(this->get_logger(), "Model loader node starting");
+  ASSEMBLER_NODE_CPP_PUBLIC
+  explicit AssemblerNode(
+      const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
+      : Node("assembler_action_server", options), loader_(std::make_shared<ModelLoader>()),
+        assembler_(std::make_shared<Assembler>()) {
+    RCLCPP_INFO(this->get_logger(), "Model loader node starting...");
 
     // std::string inputPath =
     // ament_index_cpp::get_package_share_directory("assembler") +
@@ -37,34 +36,30 @@ public:
     auto process_model_handle_goal =
         [this](const rclcpp_action::GoalUUID &uuid,
                std::shared_ptr<const assembler_msgs::action::ProcessModel::Goal>
-                   goal)
-    {
-      (void)uuid;
-      return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-    };
+                   goal) {
+          (void)uuid;
+          return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        };
 
     auto process_model_handle_cancel =
         [this](const std::shared_ptr<rclcpp_action::ServerGoalHandle<
                    assembler_msgs::action::ProcessModel>>
-                   goal_handle)
-    {
-      (void)goal_handle;
-      return rclcpp_action::CancelResponse::ACCEPT;
-    };
+                   goal_handle) {
+          (void)goal_handle;
+          return rclcpp_action::CancelResponse::ACCEPT;
+        };
 
     auto process_model_handle_accepted =
         [this](const std::shared_ptr<rclcpp_action::ServerGoalHandle<
                    assembler_msgs::action::ProcessModel>>
-                   goal_handle)
-    {
-      // this needs to return quickly to avoid blocking the executor,
-      // so we declare a lambda function to be called inside a new thread
-      auto execute_in_thread = [this, goal_handle]()
-      {
-        return this->process_model_execute(goal_handle);
-      };
-      std::thread{execute_in_thread}.detach();
-    };
+                   goal_handle) {
+          // this needs to return quickly to avoid blocking the executor,
+          // so we declare a lambda function to be called inside a new thread
+          auto execute_in_thread = [this, goal_handle]() {
+            return this->process_model_execute(goal_handle);
+          };
+          std::thread{execute_in_thread}.detach();
+        };
 
     process_model_action_server_ =
         rclcpp_action::create_server<assembler_msgs::action::ProcessModel>(
@@ -84,8 +79,7 @@ private:
   void process_model_execute(
       const std::shared_ptr<
           rclcpp_action::ServerGoalHandle<assembler_msgs::action::ProcessModel>>
-          goal_handle)
-  {
+          goal_handle) {
 
     const auto goal = goal_handle->get_goal();
     auto result =
@@ -94,15 +88,14 @@ private:
     std::shared_ptr<Assembly> target_assembly =
         loader_->loadModel(goal->model_file);
 
-    assembler_->setSubstrate(loader_->loadSubstrate(goal->substrate_file));
+    // assembler_->setSubstrate(loader_->loadSubstrate(goal->substrate_file));
 
     assembler_->setTargetAssembly(target_assembly);
 
     assembler_->generateAssemblySequence();
   }
 
-  void publishMesh(std::string inputPath)
-  {
+  void publishMesh(std::string inputPath) {
 
     std::shared_ptr<Assembly> assembly =
         loader_->loadModel(inputPath + "MotorMountTest v2.step");
@@ -142,7 +135,8 @@ private:
 
     // std::cout << "Check3" << std::endl;
 
-    // for (auto face = mesh->facets_begin(); face != mesh->facets_end(); ++face)
+    // for (auto face = mesh->facets_begin(); face != mesh->facets_end();
+    // ++face)
     // {
     //   std::vector<geometry_msgs::msg::Point> face_points;
 
@@ -151,8 +145,8 @@ private:
     //   // Ensure the face has a valid halfedge
     //   if (face->halfedge() == nullptr)
     //   {
-    //     std::cerr << "Error: Face has a null halfedge, skipping!" << std::endl;
-    //     continue;
+    //     std::cerr << "Error: Face has a null halfedge, skipping!" <<
+    //     std::endl; continue;
     //   }
 
     //   auto halfedge = face->halfedge();
@@ -166,15 +160,16 @@ private:
     //       break; // Skip this face entirely
     //     }
 
-    //     CGAL::Polyhedron_3<CGAL::Epeck>::Vertex_handle vh = halfedge->vertex();
+    //     CGAL::Polyhedron_3<CGAL::Epeck>::Vertex_handle vh =
+    //     halfedge->vertex();
 
     //     std::cout << "Check5" << std::endl;
 
     //     // Ensure vertex exists and has a valid point
     //     if (vh == nullptr)
     //     {
-    //       std::cerr << "Warning: Encountered an invalid vertex!" << std::endl;
-    //       continue; // Skip this halfedge
+    //       std::cerr << "Warning: Encountered an invalid vertex!" <<
+    //       std::endl; continue; // Skip this halfedge
     //     }
 
     //     std::cout << "Check6" << std::endl;
@@ -206,7 +201,8 @@ private:
     //   else
     //   {
     //     std::cerr << "Warning: Encountered a non-triangle face with "
-    //               << face_points.size() << " vertices, skipping!" << std::endl;
+    //               << face_points.size() << " vertices, skipping!" <<
+    //               std::endl;
     //   }
     // }
 
