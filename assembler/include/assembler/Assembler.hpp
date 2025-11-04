@@ -25,6 +25,8 @@ public:
 
 private:
 
+    void initialisePartBays();
+
     void generateInitialAssembly();
 
     size_t nodeIdGenerator(std::vector<size_t> object_ids);

@@ -4,6 +4,8 @@
 
 #include "assembler/Assembly.hpp"
 
+#include "assembler/Logger.hpp"
+
 
 int ModelLoader::next_id_ = 0;
 
@@ -15,6 +17,8 @@ int ModelLoader::next_id_ = 0;
 */
 std::shared_ptr<Assembly> ModelLoader::loadModel(const std::string& filename) {
 
+    RCLCPP_INFO(logger(), "Loading model");
+
     std::shared_ptr<Assembly> assembly = std::shared_ptr<Assembly>(new Assembly());
     std::vector<std::shared_ptr<Part>> parts = loadParts(filename);
 
@@ -22,6 +26,8 @@ std::shared_ptr<Assembly> ModelLoader::loadModel(const std::string& filename) {
 
     for (std::shared_ptr<Part> part : parts)
         assembly->addPart(part);
+
+    RCLCPP_INFO(logger(), "Model loaded");
 
     return assembly;
 }
@@ -43,7 +49,8 @@ std::vector<std::shared_ptr<Part>> ModelLoader::loadParts(const std::string& fil
     TDF_Label topLevelShape;                                        //OCC label for the highest level part
 
     if (stepReader.ReadFile(filename.c_str()) != IFSelect_RetDone) {
-        std::cerr << "Error: Failed to read STEP file." << std::endl;
+        RCLCPP_FATAL(logger(), "Failed to read STEP file");
+        rclcpp::shutdown();
         return parts;
     }
 
@@ -53,7 +60,8 @@ std::vector<std::shared_ptr<Part>> ModelLoader::loadParts(const std::string& fil
     // Get the shape tool (manages multiple parts)
     shapeTool = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
     if (shapeTool.IsNull()) {
-        std::cerr << "Error: Unable to retrieve shape tool from document!" << std::endl;
+        RCLCPP_FATAL(logger(), "Unable to retrieve shape tool from document");
+        rclcpp::shutdown();
         return parts;
     }
 
@@ -61,7 +69,11 @@ std::vector<std::shared_ptr<Part>> ModelLoader::loadParts(const std::string& fil
 
     //Top level should just be a single shape
     if (shapes.Length() != 1)
-        std::cerr << "Incorrect number of free shapes" << std::endl;
+    {
+        RCLCPP_FATAL(logger(), "Incorrect number of free shapes");
+        rclcpp::shutdown();
+        return parts;
+    }
 
     //Indexing starts from 1
     topLevelShape = shapes.Value(1);
@@ -83,7 +95,7 @@ void ModelLoader::RecurrentAddPart(const TDF_Label& currentShape, const Handle(X
     Part::PART_TYPE shapeType;                                   //The type of part, as extracted from the shape name
     TDF_LabelSequence childShapes;
 
-    std::cout << "Adding part " << shapeName << " on level " << level << std::endl;
+    RCLCPP_DEBUG(logger(), "Adding part %s on level %d", shapeName.c_str(), level);
 
     if (shapeName.find("internal") != std::string::npos)
         shapeType = Part::INTERNAL;

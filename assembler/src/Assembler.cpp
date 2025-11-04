@@ -4,18 +4,11 @@
 
 #include "assembler/CradleGenerator.hpp"
 
-
 #include "assembler/Part.hpp"
 
 #include "assembler/ARMSConfig.hpp"
 
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
-
 #include "yaml-cpp/yaml.h"
-
-//#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "assembler/Config.hpp"
 
@@ -27,18 +20,17 @@
 
 #include <cstdlib>
 
+#include "assembler/Logger.hpp"
+
 Assembler::Assembler()
 {
-    //TODO
-    // output_path_ = ament_index_cpp::get_package_share_directory("assembler") + "/../../../../";
-    // input_path_ = ament_index_cpp::get_package_share_directory("assembler") + "/../../../../";
-
-    // std::cout << "Ouput path: " << output_path_ << std::endl;
-    // std::cout << "Input path: " << input_path_ << std::endl;
-
     std::shared_ptr<Assembly> assembly = std::shared_ptr<Assembly>(new Assembly());
+  
+    initialisePartBays();
+}
 
-    
+void Assembler::initialisePartBays()
+{
     for (std::vector<gp_Pnt> bays : PARTS_BAY_POSITIONS)
     {
         bay_occupancy_.push_back(std::vector<bool>());
@@ -53,7 +45,11 @@ Assembler::Assembler()
 void Assembler::generateAssemblySequence() 
 {
     if (target_assembly_ == nullptr)
+    {
+        RCLCPP_FATAL(logger(), "No target assembly");
+        rclcpp::shutdown();
         return;
+    }
 
     generateGrasps();
 
@@ -61,7 +57,7 @@ void Assembler::generateAssemblySequence()
 
     generateNegatives();
 
-    std::cout << "Generating assembly sequence" << std::endl;
+    RCLCPP_INFO(logger(), "Generating assembly sequence");
 
     std::vector<std::shared_ptr<AssemblyNode>> path = breadthFirstZAssembly();
 
