@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<robot name="arms" xmlns:xacro="http://ros.org/wiki/xacro">
+
+<link name="base_link">
+    <visual>
+        <geometry>
+            <box size="1 1 0.1"/>
+        </geometry>
+        <origin xyz="0 0 0.05" rpy="0 0 0"/>
+        <material name="gray"><color rgba="0.5 0.5 0.5 1"/></material>
+    </visual>
+</link>
+
+<link name="print_bed">
+    <visual>
+        <geometry>
+            <box size="0.3 0.3 0.02"/>
+        </geometry>
+        <origin xyz="0.2 0 0.01" rpy="0 0 0"/>
+        <material name="blue"><color rgba="0 0 1 1"/></material>
+    </visual>
+</link>
+
+<joint name="print_bed_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="print_bed"/>
+    <origin xyz="0 0 0.01"/>
+</joint>
+
+</robot>

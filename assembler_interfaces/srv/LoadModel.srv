@@ -1,0 +1,18 @@
+# LoadModel.srv
+# Service for dynamically loading 3D models into Webots simulation
+
+# Request fields
+string model_name              # Unique name for the model in Webots
+string model_data             # Path to model file or serialized geometry data  
+geometry_msgs/Pose pose       # Position and orientation in Webots world
+float64 scale                 # Scaling factor (1.0 = original size)
+string material_name          # Optional: material/appearance name
+bool add_physics              # Whether to add physics properties
+float64 mass                  # Mass for physics (if add_physics is true)
+
+---
+
+# Response fields
+bool success                  # True if model was loaded successfully
+string message               # Status message or error description
+string webots_node_name      # Name of the created node in Webots scene tree

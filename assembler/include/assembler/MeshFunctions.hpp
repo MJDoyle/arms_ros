@@ -123,6 +123,7 @@
 #include <TopoDS_Wire.hxx>
 #include <TopoDS_Face.hxx>
 
+#include <BOPAlgo_BOP.hxx>
 
 #include <fstream>
 

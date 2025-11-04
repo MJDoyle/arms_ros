@@ -47,6 +47,24 @@ ament_target_dependencies(assembler_node
   rclcpp_components)
 rclcpp_components_register_node(assembler_node PLUGIN "AssemblerNode" EXECUTABLE assembler_action_server)
 
+# Install launch files
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install worlds directory if you have one
+install(DIRECTORY
+  worlds
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install config files (RViz, parameters, etc.)
+install(DIRECTORY
+  config
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 # include_directories(include)
 
 # link_directories("/usr/lib")

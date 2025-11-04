@@ -11,6 +11,8 @@ class CradleGenerator
 
     void createNegative();
 
+    void createNegative2();
+
     TopTools_ListOfShape bottomEdgesFlatHorizontalFaces();
 
     gp_Vec outwardsNormalOfEdge(TopoDS_Edge edge, TopTools_IndexedDataMapOfShapeListOfShape edgeToFaceMap);

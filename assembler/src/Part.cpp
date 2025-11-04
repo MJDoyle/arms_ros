@@ -185,6 +185,8 @@ void Part::generatePPGGraspPosition()
 
         float com_xy_magnitude;
 
+        float gripper_bottom_height;
+
         TopoDS_Compound padels_compound;
     };
 
@@ -320,6 +322,8 @@ void Part::generatePPGGraspPosition()
                 best_grasp.normal1 = normals[a];
                 best_grasp.normal2 = normals[b];
 
+                best_grasp.gripper_bottom_height = ShapeLowestPoint(gripper_plate_1);
+
                 best_grasp.padels_compound = compound;
 
                 best_grasp.com_xy_magnitude = com_xy_mag;
@@ -335,6 +339,8 @@ void Part::generatePPGGraspPosition()
 
                 best_grasp.normal1 = normals[a];
                 best_grasp.normal2 = normals[b];
+
+                best_grasp.gripper_bottom_height = ShapeLowestPoint(gripper_plate_1);
 
                 best_grasp.padels_compound = compound;
 
@@ -353,13 +359,25 @@ void Part::generatePPGGraspPosition()
     {
         gp_Vec grasp_center = 0.5 * SumPoints(best_grasp.center2, best_grasp.center1);
 
+        std::cout << "grasp_center1: " << best_grasp.center1.X() << " " << best_grasp.center1.Y() << " " << best_grasp.center1.Z() << std::endl;
+ 
+        std::cout << "grasp_center2: " << best_grasp.center2.X() << " " << best_grasp.center2.Y() << " " << best_grasp.center2.Z() << std::endl;
+
+        std::cout << "grasp_center: " << grasp_center.X() << " " << grasp_center.Y() << " " << grasp_center.Z() << std::endl;
+
         gp_Vec default_angle_vector(0, 1, 0);
 
-        Standard_Real grasp_angle = grasp_center.Angle(default_angle_vector);
+        Standard_Real grasp_angle = best_grasp.normal1.Angle(default_angle_vector);
         
         Standard_Real grasp_width = SubtractPoints(best_grasp.center2, best_grasp.center1).Magnitude();
 
-        Standard_Real grasp_height = grasp_center.Z() - 7.5;    //TODO set size of gripper
+        //Standard_Real plate_lowest_point = (ShapeLowestPoint(gripper_plate));
+
+        //Calculate the height offset required due to the size of the part being picked up
+        
+        float height_offset = 0.432662 - (0.05623799 / -0.08505999) * (1 - exp(0.08505999 * grasp_width));
+
+        Standard_Real grasp_height = best_grasp.gripper_bottom_height + height_offset;
 
         Standard_Real shape_lowest_point = ShapeLowestPoint(*shape_);
 
@@ -401,7 +419,7 @@ void Part::generatePPGGraspPosition()
 
 TopoDS_Shape Part::GenerateGripperPlate(gp_Dir normal, gp_Pnt center)
 {
-    TopoDS_Shape gripper_plate = BRepPrimAPI_MakeBox(10, 2, 15).Shape();
+    TopoDS_Shape gripper_plate = BRepPrimAPI_MakeBox(10, 4, 12).Shape();
     gp_Dir source_normal(0, 1, 0);
     gp_Dir target_normal = normal;
     gp_Pnt source_point(5, 0, 5);
@@ -439,7 +457,7 @@ TopoDS_Shape Part::GenerateGripperPlate(gp_Dir normal, gp_Pnt center)
     //Check bottom of gripper plate and move it up slightly above part
     Standard_Real shape_lowest_point = ShapeLowestPoint(*shape_);
 
-    Standard_Real plate_lowest_point = (ShapeLowestPoint(gripper_plate));
+    Standard_Real plate_lowest_point = ShapeLowestPoint(gripper_plate);
 
     Standard_Real lowest_point_delta = shape_lowest_point - plate_lowest_point;
 

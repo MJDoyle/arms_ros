@@ -3,6 +3,76 @@
 #include "assembler/Config.hpp"
 
 
+
+
+void CradleGenerator::createNegative()
+{
+
+    //Create box and position it on part
+
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(40, 40, 5).Shape();
+
+    box = ShapeSetCentroid(box, ShapeCentroid(shape_));
+
+
+    BRepMesh_IncrementalMesh mesher(shape_, 0.1, Standard_False, 0.1, Standard_True);
+
+    BRepMesh_IncrementalMesh mesher2(box, 0.1, Standard_False, 0.1, Standard_True);
+
+
+
+    BOPAlgo_BOP bop;
+    bop.AddArgument(box);
+    bop.AddArgument(shape_);
+    bop.SetOperation(BOPAlgo_Operation::BOPAlgo_CUT);
+
+    bop.Perform();
+
+    box = bop.Shape();
+
+    //box = BRepAlgoAPI_Cut(box, shape_).Shape();
+
+
+
+
+
+    // TopoDS_Compound compound;
+    // BRep_Builder builder;
+    // builder.MakeCompound(compound);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // BRepMesh_IncrementalMesh mesher(compound, 0.1);
+
+    StlAPI_Writer writer;
+
+    std::stringstream ss;
+
+    ss << WORKING_DIR << name_ << "_new_cradle.stl";
+
+    writer.Write(box, ss.str().c_str());
+
+}
+
+
+
+
+
+
+
+
+
 TopTools_ListOfShape CradleGenerator::bottomEdgesFlatHorizontalFaces()
 {
     TopTools_ListOfShape result;
@@ -194,7 +264,7 @@ gp_Vec CradleGenerator::outwardsNormalOfEdge(TopoDS_Edge edge, TopTools_IndexedD
 
 // }
 
-void CradleGenerator::createNegative()
+void CradleGenerator::createNegative2()
 {
 
     // Display connection

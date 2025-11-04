@@ -308,9 +308,9 @@ void Assembler::generateAssemblySequence()
         {
             YAML::Node vibrate_part_command;
 
-            vibrate_part_command["command-type"] = "VIBRATE PART";
+            vibrate_part_command["command-type"] = "VIBRATE_PART";
 
-            vibrate_part_command["command_properties"]["part-id"] = part_id;
+            vibrate_part_command["command-properties"]["part-id"] = part_id;
 
             commands.push_back(vibrate_part_command);
         }

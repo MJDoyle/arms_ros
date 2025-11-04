@@ -1,0 +1,98 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+
+WorldInfo {
+  info [
+    "Assembly simulation world with ROS2 supervisor controller"
+  ]
+  title "Assembler World"
+  contactProperties [
+    ContactProperties {
+      material1 "default"
+      material2 "default"
+      coulombFriction [
+        0.5
+      ]
+      bounce 0.1
+      bounceVelocity 0.01
+    }
+  ]
+}
+
+Viewpoint {
+  orientation -0.3 0.9 0.15 0.8
+  position 3 2 4
+  follow "supervisor"
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  name "assembly_floor"
+  floorSize 6 6
+  floorTileSize 1 1
+  wallHeight 0.1
+}
+
+# This is your supervisor robot that runs the controller
+DEF supervisor Robot {
+  name "supervisor"
+  controller "supervisor_controller"
+  supervisor TRUE
+  translation 0 0 0.1
+  children [
+    # Optional: Add a visual representation
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.1 0.8
+        metalness 0.0
+        roughness 0.3
+      }
+      geometry Box {
+        size 0.1 0.1 0.05
+      }
+    }
+  ]
+}
+
+# Optional: Add some lighting
+SpotLight {
+  attenuation 0 0 1
+  beamWidth 0.9
+  cutOffAngle 1.2
+  direction 0 -1 0
+  intensity 5
+  location 0 3 0
+  castShadows TRUE
+}
+
+# Optional: Add a workbench or assembly area
+DEF workbench Solid {
+  translation 0 0 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.6 0.4
+        metalness 0.0
+        roughness 0.8
+      }
+      geometry Box {
+        size 2 1 0.05
+      }
+    }
+  ]
+  name "workbench"
+  boundingObject Box {
+    size 2 1 0.05
+  }
+  physics Physics {
+    density -1
+  }
+}

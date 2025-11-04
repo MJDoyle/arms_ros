@@ -64,6 +64,8 @@ private:
     auto result =
         std::make_shared<assembler_msgs::action::ProcessModel::Result>();
 
+    RCLCPP_INFO(this->get_logger(), "Begin process model");
+
     std::shared_ptr<Assembly> target_assembly = ModelLoader::loadModel(goal->model_file);
 
     assembler_->setTargetAssembly(target_assembly);
@@ -71,6 +73,8 @@ private:
     assembler_->generateAssemblySequence();
 
     goal_handle->succeed(result);
+
+    RCLCPP_INFO(this->get_logger(), "Process model complete");
   }
 
   std::shared_ptr<Assembler> assembler_;
