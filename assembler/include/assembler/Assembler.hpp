@@ -29,6 +29,12 @@ private:
 
     void generateInitialAssembly();
 
+    void generateCommandFile();
+
+    void handleInternalParts();
+
+    std::vector<size_t> generatePartAdditionOrder();
+
     size_t nodeIdGenerator(std::vector<size_t> object_ids);
 
     std::map<size_t, std::vector<size_t>> node_id_map_;
@@ -50,6 +56,8 @@ private:
     std::shared_ptr<Assembly> initial_assembly_;
 
     std::shared_ptr<Assembly> target_assembly_;
+
+    std::vector<std::shared_ptr<AssemblyNode>> assembly_path_;
 
     std::string output_path_;
     std::string input_path_;

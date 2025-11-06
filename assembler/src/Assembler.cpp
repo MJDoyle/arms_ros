@@ -29,6 +29,8 @@ Assembler::Assembler()
     initialisePartBays();
 }
 
+/*  Initialise the 2D occupancy values for the grid of parts bays - outer vector corresponds to bays of different sizes, inner vector to individual bays
+*/
 void Assembler::initialisePartBays()
 {
     for (std::vector<gp_Pnt> bays : PARTS_BAY_POSITIONS)
@@ -42,8 +44,12 @@ void Assembler::initialisePartBays()
     }
 }
 
+/*  The main assembler function. Generates grasps and cradles for each part as appropriate, determines the correct order of assembly, and produces a .yaml command file to be sent to ARMS
+*/
 void Assembler::generateAssemblySequence() 
 {
+    RCLCPP_INFO(logger(), "Starting assembler analysis");
+
     if (target_assembly_ == nullptr)
     {
         RCLCPP_FATAL(logger(), "No target assembly");
@@ -57,115 +63,32 @@ void Assembler::generateAssemblySequence()
 
     generateNegatives();
 
-    RCLCPP_INFO(logger(), "Generating assembly sequence");
+    assembly_path_ = breadthFirstZAssembly();
 
-    std::vector<std::shared_ptr<AssemblyNode>> path = breadthFirstZAssembly();
-
-    std::vector<size_t> ordered_part_additions;
-
-    std::cout << std::endl << "Ordered part list: " << std::endl;
-
-    for (std::shared_ptr<AssemblyNode> node : path)
-    {
-        for (size_t part_id : node->assembly_->getPartIds())
-        {
-            bool part_present = false;
-
-            for (size_t id : ordered_part_additions)
-            {
-                if (id == part_id)
-                    part_present = true;
-            }
-
-            if (!part_present)
-            {
-                ordered_part_additions.push_back(part_id);
-
-                std::cout << "Part: " << part_id << std::endl;
-
-                continue;
-            }
-        }
-    }
-
-    if (path.size() < 2)
+    if (assembly_path_.size() < 2)
+        RCLCPP_WARN(logger(), "Only one assembly state found");
         return;
 
-    //TODO janky
-    std::shared_ptr<Part> target_base_part = path[1]->assembly_->getParts()[0];
+    handleInternalParts();  //Includes positioning the parts relative to the base part
 
-    //If initial (or target) assembly has internal parts, do slicer stuff and then set target_assembly position
-    if (initial_assembly_->getNumInternalParts() != 0)
-    {
-        //Arrange the internal parts on the bed
-        if (!arrangeInternalParts())
-        {
-            std::cerr << "Parts cannot be arranged" << std::endl;
+    generateCommandFile();
+}
 
-            return;
-        }
-
-        //Get the slicing GCODE from prusa slicer
-        generateSlicerGcode();
-
-        //Set the target assembly position
-        
-        //If base part is internal, build on that
-        if (target_base_part->getType() == Part::INTERNAL)
-        {
-            std::shared_ptr<Part> initial_base_part = initial_assembly_->getPartById(target_base_part->getId());
-
-            target_assembly_->alignToPart(initial_base_part);
-        }
-        //Otherwise, we need to build in a free area
-        else    
-        {
-            std::cerr << "base part not internal" << std::endl;
-
-            return;
-        }
-    }
-
-    
-    //If initial (or target) assembly has no internal parts, set target_assembly position to middle of bed
-    else
-    {
-        //set target assembly positions at bed center
-        target_assembly_->placeOnPoint(gp_Pnt(PRINT_BED_CENTER[0], PRINT_BED_CENTER[1], PRINT_BED_HEIGHT));
-    }
-
-
-
-
+/*  Uses the grasps, part positions and path to generate the command file to be sent to ARMS
+*/
+void Assembler::generateCommandFile()
+{
+    std::vector<size_t> ordered_part_additions = generatePartAdditionOrder();
 
     //In these commands for now let's give the part-height as the height of the pnp location relative to 0,
     //and the z location as the height of the pnp placement location relative to 0
     //You then might need to offset by the vacuum toolhead offset at some point
-
 
     YAML::Node root;
 
     YAML::Node commands = YAML::Node(YAML::NodeType::Sequence);
 
     std::vector<std::shared_ptr<Part>> initial_parts = initial_assembly_->getParts();
-
-    //TODO might get rid of locating external parts
-    // for (std::shared_ptr<Part> part : initial_parts)
-    // {        
-    //     if (!part->getType() == Part::EXTERNAL)
-    //         continue;
-
-    //     YAML::Node detect_part_command;
-    //     detect_part_command["command-type"] = "LOCATE_EXTERNAL_PART";
-    //     detect_part_command["command-properties"]["part-description"] = ""; //TODO
-    //     detect_part_command["command-properties"]["part-name"] = ""; //TODO
-    //     detect_part_command["command-properties"]["part-id"] = part->getId();
-    //     detect_part_command["command-properties"]["part-height"] = part->getMeshMaxZ(); //This is the height from 0, accounting for the cradle etc
-
-    //     commands.push_back(detect_part_command);
-    // }
-
-
 
     //Designate internal parts
     for (std::shared_ptr<Part> initial_part : initial_parts)
@@ -277,14 +200,12 @@ void Assembler::generateAssemblySequence()
 
         Part::PART_TYPE part_type = initial_assembly_->getPartById(part_id)->getType();
 
-        std::cout << "Part type: " << part_type << std::endl;
-
-        std::cout << "Part name: " << initial_assembly_->getPartById(part_id)->getName();
+        RCLCPP_DEBUG(logger(), "Adding PLACE_PART with type %d and name %s", static_cast<int>(part_type), initial_assembly_->getPartById(part_id)->getName().c_str());
 
         //Do nothing with the base object if it's internal  //TODO janky
-        if (part_id == path[1]->assembly_->getPartIds()[0] && path[1]->assembly_->getParts()[0]->getType() == Part::INTERNAL)
+        if (part_id == assembly_path_[1]->assembly_->getPartIds()[0] && assembly_path_[1]->assembly_->getParts()[0]->getType() == Part::INTERNAL)
         {
-            std::cout << "base object - skipping" << std::endl;
+            RCLCPP_DEBUG(logger(), "Skipping base object");
  
             continue;
         }
@@ -324,6 +245,90 @@ void Assembler::generateAssemblySequence()
     fout << root;
 
     fout.close();
+}
+
+/*  
+    Arranges internal parts on the bed and generates the printing gcode, then shifts all of the part positions so that they align with the print position of the base part
+*/
+void Assembler::handleInternalParts()
+{
+    //TODO janky
+    std::shared_ptr<Part> target_base_part = assembly_path_[1]->assembly_->getParts()[0];
+
+    //If initial (or target) assembly has internal parts, do slicer stuff and then set target_assembly position
+    if (initial_assembly_->getNumInternalParts() != 0)
+    {
+        //Arrange the internal parts on the bed
+        if (!arrangeInternalParts())
+        {
+            RCLCPP_FATAL(logger(), "Internal parts cannot be arranged on bed");
+            rclcpp::shutdown();
+            return;
+        }
+
+        //Get the slicing GCODE from prusa slicer
+        generateSlicerGcode();
+
+        //Set the target assembly position
+        
+        //If base part is internal, build on that
+        if (target_base_part->getType() == Part::INTERNAL)
+        {
+            std::shared_ptr<Part> initial_base_part = initial_assembly_->getPartById(target_base_part->getId());
+
+            target_assembly_->alignToPart(initial_base_part);
+        }
+        //Otherwise, we need to build in a free area
+        else    
+        {
+            RCLCPP_FATAL(logger(), "Base part not internal");
+            rclcpp::shutdown();
+            return;
+        }
+    }
+
+    //If initial (or target) assembly has no internal parts, set target_assembly position to middle of bed
+    else
+    {
+        //set target assembly positions at bed center
+        target_assembly_->placeOnPoint(gp_Pnt(PRINT_BED_CENTER[0], PRINT_BED_CENTER[1], PRINT_BED_HEIGHT));
+    }
+}
+
+/* Output: vector of parts ids in the order that they must be assembled to go from starting assembly to target assembly
+
+    Iterates through the assembly states and determines which part must be added to go from one state to the next
+*/
+std::vector<size_t> Assembler::generatePartAdditionOrder()
+{
+    RCLCPP_INFO(logger(), "Generating ordered part addition");
+
+    std::vector<size_t> ordered_part_additions;
+
+    for (std::shared_ptr<AssemblyNode> node : assembly_path_)
+    {
+        for (size_t part_id : node->assembly_->getPartIds())
+        {
+            bool part_present = false;
+
+            for (size_t id : ordered_part_additions)
+            {
+                if (id == part_id)
+                    part_present = true;
+            }
+
+            if (!part_present)
+            {
+                ordered_part_additions.push_back(part_id);
+
+                RCLCPP_DEBUG(logger(), "Part %ld", part_id);
+
+                continue;
+            }
+        }
+    }
+
+    return ordered_part_additions;
 }
 
 bool Assembler::arrangeInternalParts()
