@@ -6,34 +6,45 @@
 #include <memory>
 #include <vector>
 #include <set>
+#include <map>
 
 class Part;
 
 class Assembly {
 
 public:
-    explicit Assembly();
+    explicit Assembly() {}
 
-    void addPart(std::shared_ptr<Part> part) { parts_.push_back(part); }
+    void setAssembledPart(std::shared_ptr<Part> part, gp_Pnt position) { assembled_part_transforms_[part] = position; }
+
+    void setUnassembledPart(std::shared_ptr<Part> part, gp_Pnt position) { unassembled_part_transforms_[part] = position; }
  
-    std::vector<std::shared_ptr<Part>> getParts() { return parts_; }
+    std::map<std::shared_ptr<Part>, gp_Pnt> getAssembledPartTransforms() { return assembled_part_transforms_; }
 
-    std::shared_ptr<Part> getPartById(size_t id);
+    std::map<std::shared_ptr<Part>, gp_Pnt> getUnassembledPartTransforms() { return unassembled_part_transforms_; }
 
-    std::vector<size_t> getPartIds();
+    void setPartTransforms();
+
+    //void setParts(std::map<std::shared_ptr<Part>, gp_Pnt> parts) { parts_ = parts; }
+
+    std::shared_ptr<Part> getPartById(size_t id);   //TODO replace with a dictionary of ID to part in assembler?
+
+    std::vector<size_t> getAssembledPartIds();
 
     int getNumInternalParts();
 
-    void placeOnPoint(gp_Pnt point);
+    // void placeOnPoint(gp_Pnt point);
 
-    void alignToPart(std::shared_ptr<Part> part);
+    // void alignToPart(std::shared_ptr<Part> part);
 
-    void saveAsSTL(std::string filename);
+    // void saveAsSTL(std::string filename);
 
 
 private:
-    std::vector<std::shared_ptr<Part>> parts_;
 
+    std::map<std::shared_ptr<Part>, gp_Pnt> unassembled_part_transforms_;
+
+    std::map<std::shared_ptr<Part>, gp_Pnt> assembled_part_transforms_;
 };
 
 struct AssemblyNode {

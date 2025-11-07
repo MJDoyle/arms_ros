@@ -25,7 +25,9 @@ std::shared_ptr<Assembly> ModelLoader::loadModel(const std::string& filename) {
     next_id_ = 0;
 
     for (std::shared_ptr<Part> part : parts)
-        assembly->addPart(part);
+    {
+        assembly->setAssembledPart(part, ShapeCentroid(*(part->getShape())));
+    }
 
     RCLCPP_INFO(logger(), "Model loaded");
 

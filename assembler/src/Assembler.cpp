@@ -20,12 +20,16 @@
 
 #include <cstdlib>
 
+#include "assembler/Part.hpp"
+
 #include "assembler/Logger.hpp"
 
+#include "assembler/VacuumGraspGenerator.hpp"
+
+#include "assembler/PPGGraspGenerator.hpp"
+
 Assembler::Assembler()
-{
-    std::shared_ptr<Assembly> assembly = std::shared_ptr<Assembly>(new Assembly());
-  
+{  
     initialisePartBays();
 }
 
@@ -57,11 +61,15 @@ void Assembler::generateAssemblySequence()
         return;
     }
 
-    generateGrasps();
+    //For now, at least one part must be internal (printed)
+    if (target_assembly_->getNumInternalParts() == 0)
+    {
+        RCLCPP_FATAL(logger(), "No internal parts in target assembly");
+        rclcpp::shutdown();
+        return;
+    }
 
-    generateInitialAssembly();
-
-    generateNegatives();
+    generateInitialAssembly();  //Initial part positions not set here
 
     assembly_path_ = breadthFirstZAssembly();
 
@@ -69,7 +77,39 @@ void Assembler::generateAssemblySequence()
         RCLCPP_WARN(logger(), "Only one assembly state found");
         return;
 
-    handleInternalParts();  //Includes positioning the parts relative to the base part
+    //First node on assembly path has no assembled parts
+    //Second node has one assembled part - this should be internal and is the base part
+
+    if (assembly_path_[1]->assembly_->getAssembledPartTransforms().size() != 1)
+    {
+        RCLCPP_FATAL(logger(), "Second assembly node doesn't have one assembled part");
+        rclcpp::shutdown();
+        return;
+    }
+
+    if (assembly_path_[1]->assembly_->getAssembledPartTransforms().begin()->first->getType() != Part::PART_TYPE::INTERNAL)
+    {
+        RCLCPP_FATAL(logger(), "Second assembly node part isn't internal");
+        rclcpp::shutdown();
+        return;
+    }
+
+    base_part_ = assembly_path_[1]->assembly_->getAssembledPartTransforms().begin()->first;  //Set base part
+
+    generateInitialPartPositions(); //Initial part positions are now set here
+
+    generateGrasps();
+
+    generateNegatives();
+
+    generateSlicerGcode();
+
+    alignTargetAssemblyToInitialAssembly();
+
+
+
+
+
 
     generateCommandFile();
 }
@@ -88,31 +128,24 @@ void Assembler::generateCommandFile()
 
     YAML::Node commands = YAML::Node(YAML::NodeType::Sequence);
 
-    std::vector<std::shared_ptr<Part>> initial_parts = initial_assembly_->getParts();
 
     //Designate internal parts
-    for (std::shared_ptr<Part> initial_part : initial_parts)
+    for (auto const& [part, initial_transform] : initial_assembly_->getUnassembledPartTransforms())  //All parts in initial assembly are unassembled
     {
-        if (initial_part->getType() != Part::INTERNAL)
-            continue;
+        if (part->getType() != Part::INTERNAL)
+            continue;   
 
-        std::shared_ptr<Part> target_part = target_assembly_->getPartById(initial_part->getId());
+        gp_Vec pick_position = SumPoints(initial_transform, part->getVacuumGrasp());
 
-        gp_Pnt pick_position(initial_part->getCentroid().X(), 
-                             initial_part->getCentroid().Y(),
-                             initial_part->getHighestPoint());
+        gp_Vec place_position = SumPoints(target_assembly_->getAssembledPartTransforms()[part], part->getVacuumGrasp());
 
-        gp_Pnt place_position(target_part->getCentroid().X(), 
-                              target_part->getCentroid().Y(),
-                              target_part->getHighestPoint());
+        PPGGrasp ppg_grasp = part->getPPGGrasp();
 
-        gp_Vec grasp_position = SumPoints(initial_part->getCoM(), target_part->getPPGGraspPosition());
-        Standard_Real grasp_rotation = target_part->getPPGGraspRotation();  //TODO need to handle rotation of parts eventually too
-        Standard_Real grasp_width = target_part->getPPGGraspWidth();
+        gp_Vec grasp_position = SumPoints(initial_transform, ppg_grasp.position_);
 
         YAML::Node designate_part_command;
         designate_part_command["command-type"] = "DESIGNATE_INTERNAL_PART";
-        designate_part_command["command-properties"]["part-id"] = initial_part->getId();
+        designate_part_command["command-properties"]["part-id"] = part->getId();
         designate_part_command["command-properties"]["part-pick-height"] = pick_position.Z();
         designate_part_command["command-properties"]["part-place-height"] = place_position.Z();
         designate_part_command["command-properties"]["part-pick-pos-x"] = pick_position.X();
@@ -122,27 +155,25 @@ void Assembler::generateCommandFile()
         designate_part_command["command-properties"]["part-grasp-height"] = grasp_position.Z();
         designate_part_command["command-properties"]["part-grasp-pos-x"] = grasp_position.X();
         designate_part_command["command-properties"]["part-grasp-pos-y"] = grasp_position.Y();
-        designate_part_command["command-properties"]["part-grasp-angle"] = grasp_rotation;
-        designate_part_command["command-properties"]["part-grasp-width"] = grasp_width;
+        designate_part_command["command-properties"]["part-grasp-angle"] = ppg_grasp.rotation_;
+        designate_part_command["command-properties"]["part-grasp-width"] = ppg_grasp.width_;
 
         commands.push_back(designate_part_command);
     }
 
     //Designate external parts
-    for (std::shared_ptr<Part> initial_part : initial_parts)
+    for (auto const& [part, initial_transform] : initial_assembly_->getUnassembledPartTransforms())  //All parts in initial assembly are unassembled
     {        
-        if (initial_part->getType() != Part::EXTERNAL)
+        if (part->getType() != Part::EXTERNAL)
             continue;
 
-        std::shared_ptr<Part> target_part = target_assembly_->getPartById(initial_part->getId());
+        gp_Vec pick_position = SumPoints(initial_transform, part->getVacuumGrasp());
 
-        gp_Vec pick_position = SumPoints(initial_part->getCoM(), initial_part->getVacuumGrasp());
-
-        gp_Vec place_position = SumPoints(target_part->getCoM(), target_part->getVacuumGrasp());
+        gp_Vec place_position = SumPoints(target_assembly_->getAssembledPartTransforms()[part], part->getVacuumGrasp());
 
         YAML::Node designate_part_command;
         designate_part_command["command-type"] = "DESIGNATE_EXTERNAL_PART";
-        designate_part_command["command-properties"]["part-id"] = initial_part->getId();
+        designate_part_command["command-properties"]["part-id"] = part->getId();
         designate_part_command["command-properties"]["part-pick-height"] = pick_position.Z(); //This is the height from 0, accounting for the cradle etc TODO
         designate_part_command["command-properties"]["part-place-height"] = place_position.Z(); //This is the height from 0, accounting for the cradle etc
         designate_part_command["command-properties"]["part-pick-pos-x"] = pick_position.X();
@@ -154,18 +185,18 @@ void Assembler::generateCommandFile()
     }
 
     //Designate screws
-    for (std::shared_ptr<Part> initial_part : initial_parts)
+    for (auto const& [part, initial_transform] : initial_assembly_->getUnassembledPartTransforms())  //All parts in initial assembly are unassembled
     {
-        if (initial_part->getType() != Part::SCREW)
+        if (part->getType() != Part::SCREW)
             continue;
 
-        std::shared_ptr<Part> target_part = target_assembly_->getPartById(initial_part->getId());
-
-        gp_Pnt place_position(target_part->getCoM().X(), target_part->getCoM().Y(), target_part->getHighestPoint());
+        gp_Pnt place_position(target_assembly_->getAssembledPartTransforms()[part].X(), 
+                                target_assembly_->getAssembledPartTransforms()[part].Y(), 
+                                target_assembly_->getAssembledPartTransforms()[part].Z() + 5); //TODO need to work out what to do with screw z offset
 
         YAML::Node designate_part_command;
         designate_part_command["command-type"] = "DESIGNATE_SCREW";
-        designate_part_command["command-properties"]["part-id"] = initial_part->getId();
+        designate_part_command["command-properties"]["part-id"] = part->getId();
         designate_part_command["command-properties"]["part-place-height"] = place_position.Z();
         designate_part_command["command-properties"]["part-place-pos-x"] = place_position.X();
         designate_part_command["command-properties"]["part-place-pos-y"] = place_position.Y();
@@ -196,14 +227,12 @@ void Assembler::generateCommandFile()
     //Iterate through each of the added parts in the path
     for (size_t part_id : ordered_part_additions)
     {
-        std::cout << "Adding PLACE_PART command" << std::endl;
-
         Part::PART_TYPE part_type = initial_assembly_->getPartById(part_id)->getType();
 
         RCLCPP_DEBUG(logger(), "Adding PLACE_PART with type %d and name %s", static_cast<int>(part_type), initial_assembly_->getPartById(part_id)->getName().c_str());
 
-        //Do nothing with the base object if it's internal  //TODO janky
-        if (part_id == assembly_path_[1]->assembly_->getPartIds()[0] && assembly_path_[1]->assembly_->getParts()[0]->getType() == Part::INTERNAL)
+        //Do nothing with the base object if it's internal  //TODO which it must be at the moment
+        if (part_id == base_part_->getId() && base_part_->getType() == Part::INTERNAL)
         {
             RCLCPP_DEBUG(logger(), "Skipping base object");
  
@@ -239,7 +268,6 @@ void Assembler::generateCommandFile()
 
     std::ofstream fout(OUTPUT_DIR + "assembly_plan.yaml");
 
-
     std::cout << "Output path: " << OUTPUT_DIR + "assembly_plan.yaml" << std::endl;
 
     fout << root;
@@ -248,52 +276,53 @@ void Assembler::generateCommandFile()
 }
 
 /*  
-    Arranges internal parts on the bed and generates the printing gcode, then shifts all of the part positions so that they align with the print position of the base part
+    Generate the initial internal part positions by populating the print bed, and generate the initial external part positions using the bay occupancy
 */
-void Assembler::handleInternalParts()
+void Assembler::generateInitialPartPositions()
 {
-    //TODO janky
-    std::shared_ptr<Part> target_base_part = assembly_path_[1]->assembly_->getParts()[0];
+    RCLCPP_INFO(logger(), "Generating ordered part addition");
 
-    //If initial (or target) assembly has internal parts, do slicer stuff and then set target_assembly position
-    if (initial_assembly_->getNumInternalParts() != 0)
+    //Arrange the internal parts on the bed
+    if (!arrangeInternalParts())
     {
-        //Arrange the internal parts on the bed
-        if (!arrangeInternalParts())
-        {
-            RCLCPP_FATAL(logger(), "Internal parts cannot be arranged on bed");
-            rclcpp::shutdown();
-            return;
-        }
-
-        //Get the slicing GCODE from prusa slicer
-        generateSlicerGcode();
-
-        //Set the target assembly position
-        
-        //If base part is internal, build on that
-        if (target_base_part->getType() == Part::INTERNAL)
-        {
-            std::shared_ptr<Part> initial_base_part = initial_assembly_->getPartById(target_base_part->getId());
-
-            target_assembly_->alignToPart(initial_base_part);
-        }
-        //Otherwise, we need to build in a free area
-        else    
-        {
-            RCLCPP_FATAL(logger(), "Base part not internal");
-            rclcpp::shutdown();
-            return;
-        }
+        RCLCPP_FATAL(logger(), "Internal parts cannot be arranged on bed");
+        rclcpp::shutdown();
+        return;
     }
 
-    //If initial (or target) assembly has no internal parts, set target_assembly position to middle of bed
-    else
+    RCLCPP_INFO(logger(), "Generating external part bay positions");
+
+    //External initial part
+    for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms())  //All parts in initial assembly are unassembled
     {
-        //set target assembly positions at bed center
-        target_assembly_->placeOnPoint(gp_Pnt(PRINT_BED_CENTER[0], PRINT_BED_CENTER[1], PRINT_BED_HEIGHT));
+        //Only create negatives or external parts
+        if (part->getType() != Part::EXTERNAL)
+            continue;
+
+        initial_assembly_->setUnassembledPart(part, part->generateBayPosition(bay_occupancy_));
     }
 }
+
+/*
+    Align the positions of the assembled parts in the target assembly to the position of the base part as given by the intial assembly
+*/
+void Assembler::alignTargetAssemblyToInitialAssembly()
+{
+    RCLCPP_INFO(logger(), "Aligning target assembly with initial assembly base part");
+    
+    gp_Pnt target_base_part_pos = target_assembly_->getAssembledPartTransforms()[base_part_]; //TODO need to check this part exists
+
+    gp_Pnt initial_base_part_pos = assembly_path_[1]->assembly_->getAssembledPartTransforms()[base_part_];
+
+    gp_Vec delta(target_base_part_pos, initial_base_part_pos);
+
+    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms())  //All parts in target assembly are assembled
+    {
+        target_assembly_->setAssembledPart(part, transform.Translated(delta));
+    }
+}
+
+
 
 /* Output: vector of parts ids in the order that they must be assembled to go from starting assembly to target assembly
 
@@ -307,7 +336,7 @@ std::vector<size_t> Assembler::generatePartAdditionOrder()
 
     for (std::shared_ptr<AssemblyNode> node : assembly_path_)
     {
-        for (size_t part_id : node->assembly_->getPartIds())
+        for (size_t part_id : node->assembly_->getAssembledPartIds())
         {
             bool part_present = false;
 
@@ -331,15 +360,19 @@ std::vector<size_t> Assembler::generatePartAdditionOrder()
     return ordered_part_additions;
 }
 
+/* Arrange internal parts on the print bed
+*/
 bool Assembler::arrangeInternalParts()
 {
+    RCLCPP_INFO(logger(), "Arranging initial internal parts on bed");
+
     double currentY = PRINT_BED_BOTTOM_LEFT[1];
 
     double currentX = PRINT_BED_TOP_RIGHT[0];
 
     double nextY = PRINT_BED_BOTTOM_LEFT[1];
 
-    for (std::shared_ptr<Part> part : initial_assembly_->getParts())
+    for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms())    //All parts unassembled in initial assembly
     {
         if (part->getType() != Part::INTERNAL)
             continue;
@@ -353,8 +386,6 @@ bool Assembler::arrangeInternalParts()
             double nextX = currentX - ShapeAxisSize(shape, 0) - PRINT_MIN_SPACING;
 
             double topY = currentY + ShapeAxisSize(shape, 1) + PRINT_MIN_SPACING;
-
-            std::cout << "nextX: " << nextX << "    topyY: " << topY << std::endl;
 
             //Check the new position is within parts bay bounds
             if (topY > PRINT_BED_TOP_RIGHT[1])
@@ -373,8 +404,7 @@ bool Assembler::arrangeInternalParts()
             }
 
             //Otherwise, part fits
-
-            part->setCentroidPosition(part_position);
+            initial_assembly_->setUnassembledPart(part, part_position);
 
             currentX = nextX;
 
@@ -387,8 +417,12 @@ bool Assembler::arrangeInternalParts()
     return true;
 }
 
+/* Generate GCode for the internal parts, the print positions of which are given by the initial assembly
+*/
 void Assembler::generateSlicerGcode()
 {
+    RCLCPP_INFO(logger(), "Generating Slicer Gcode for internal parts");
+
     //Find internal parts
     //They will already be in the correct position from previously arranging them
     //Save each as its own stl file
@@ -397,7 +431,7 @@ void Assembler::generateSlicerGcode()
 
     std::vector<std::string> filenames;
 
-    for (std::shared_ptr<Part> part : initial_assembly_->getParts())
+    for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms()) //No assembled parts in target assembly
     {
         if (part->getType() != Part::INTERNAL)
             continue;
@@ -445,7 +479,8 @@ void Assembler::generateSlicerGcode()
     //Load the GCode that Prusa writes
     std::ifstream gcodeFile(gcode_ss.str());
     if (!gcodeFile) {
-        std::cerr << "Error: Cannot open G-code file." << std::endl;
+        RCLCPP_FATAL(logger(), "Cannot open Gcode file");
+        rclcpp::shutdown();
         return;
     }
 
@@ -477,6 +512,8 @@ void Assembler::generateSlicerGcode()
 
 std::vector<std::shared_ptr<AssemblyNode>> Assembler::breadthFirstZAssembly()
 {
+    RCLCPP_INFO(logger(), "Generating assembly path");
+
     std::vector<std::shared_ptr<AssemblyNode>> path;
 
     std::shared_ptr<AssemblyNode> target_node;
@@ -487,7 +524,7 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::breadthFirstZAssembly()
 
     base_node->assembly_ = target_assembly_;
 
-    base_node->id_ = nodeIdGenerator(target_assembly_->getPartIds());
+    base_node->id_ = nodeIdGenerator(target_assembly_->getAssembledPartIds());
 
     std::queue<std::shared_ptr<AssemblyNode>> queue;
 
@@ -499,40 +536,23 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::breadthFirstZAssembly()
 
     visited_nodes.emplace(base_node);
 
-    std::cout << "starting breadth search" << std::endl;
-
     while (queue.size() > 0)
     {
         std::shared_ptr<AssemblyNode> current_node = queue.front();
-
-        std::cout << std::endl << std::endl << "Current node: " << current_node->id_ << std::endl;
-
-        for (std::shared_ptr<Part> part : current_node->assembly_->getParts())
-            std::cout << part->getId() << std::endl;
-
-        std::stringstream ss;
-
-        ss << WORKING_DIR << "node_" << current_node->id_ << ".stl";
-
-        current_node->assembly_->saveAsSTL(ss.str().c_str());
  
         queue.pop();
 
-        //Check if current node is target node (e.g., has no meshes)
-        if (current_node->assembly_->getParts().size() == 0)               
+        //Check if current node is target node (e.g., has no assembled parts)
+        if (current_node->assembly_->getAssembledPartTransforms().size() == 0)               
             target_node = current_node;
 
         std::vector<std::shared_ptr<AssemblyNode>> neighbours = findNodeNeighbours(current_node);
 
         for (std::shared_ptr<AssemblyNode> neighbour : neighbours)
         {
-            //std::cout << "neighbour: " << neighbour->id_ << std::endl; 
-
             //If neighbour has already been visited, move on
             if (visited_nodes.find(neighbour) != visited_nodes.end())
                 continue;
-
-            //std::cout << "not visited" << std::endl;
 
             visited_nodes.emplace(neighbour);
 
@@ -544,8 +564,8 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::breadthFirstZAssembly()
 
     if (!parents.count(target_node))
     {
-        std::cout << "No path found" << std::endl;
-
+        RCLCPP_FATAL(logger(), "No assembly path found");
+        rclcpp::shutdown();
         return path;
     }
 
@@ -562,29 +582,17 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::breadthFirstZAssembly()
 
     //TODO - find internal first node
 
-    std::cout << std::endl << "Found path" << std::endl << std::endl; 
-
-    int n = 0;
-
-    for (std::shared_ptr<AssemblyNode> node : path)
-    {
-        std::stringstream ss;
-
-        ss << WORKING_DIR << "assembly_node_" << n << ".stl";
-
-        node->assembly_->saveAsSTL(ss.str());
-
-        n ++;
-    }
+    RCLCPP_INFO(logger(), "Assembly path found");
 
     return path;
 }
 
 std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::shared_ptr<AssemblyNode> node)
 {
-    std::vector<std::shared_ptr<AssemblyNode>> neighbours;
+    // Set each part to its position within the assembly
+    node->assembly_->setPartTransforms();
 
-    std::vector<std::shared_ptr<Part>> parts = node->assembly_->getParts();
+    std::vector<std::shared_ptr<AssemblyNode>> neighbours;
 
     // //Iterate through each part
     // //Try to move the part vertically over 10cm
@@ -592,8 +600,7 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::sh
     // //If no collisions take place, create a new assemblynode with this part removed and add it to neighbours list
     float step_size = 1.0f;
 
-
-    for (std::shared_ptr<Part> part : parts)
+    for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms())
     {
         bool collides = false;
 
@@ -609,20 +616,14 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::sh
 
             step_distance += step_size;
 
-            std::cout << "stepping!" << std::endl;
-
-            for (std::shared_ptr<Part> otherPart : parts)
+            for (auto const& [other_part, other_transform] : node->assembly_->getAssembledPartTransforms())
             {
                 //Don't try to collide with self
-                if (otherPart->getId() == part->getId())
+                if (other_part->getId() == part->getId())
                     continue;
 
-                //std::cout << "Checking collision: " << part->getId() << " and "  << otherPart->getId() << std::endl;
-
-                if (part->collide(otherPart))
+                if (part->collide(other_part))
                 {
-                    //std::cout << "Collision" << std::endl;
-
                     collides = true;
                     break;
                 }
@@ -632,37 +633,38 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::sh
                 break;
         }
 
-        //TODO for now assume that bolts don't collide. This needs to be handled correctly
-        if (part->getType() == Part::SCREW)
-            collides = false;
-
-        //std::cout << "Moved " << num_steps << " steps" << std::endl;
-
         //Put the part back where it was
         part->translate(gp_Vec(0, 0, -step_distance));
 
         if (collides)
             continue;
 
-        //std::cout << std::endl;
-
         //Create new assembly node
         std::shared_ptr<Assembly> neighbour_assembly = std::shared_ptr<Assembly>(new Assembly());
 
         std::shared_ptr<AssemblyNode> neighbour_node = std::shared_ptr<AssemblyNode>(new AssemblyNode());
 
-        for (std::shared_ptr<Part> part_to_add : parts)
-        {
-            //Don't copy over part to be removed
-            if (part_to_add->getId() == part->getId())
-                continue;
 
-            neighbour_assembly->addPart(part_to_add->clone());
+        for (auto const& [part_to_add, transform_to_add] : node->assembly_->getUnassembledPartTransforms())
+        {
+            neighbour_assembly->setUnassembledPart(part_to_add, transform_to_add);
+        }
+
+
+        for (auto const& [part_to_add, transform_to_add] : node->assembly_->getAssembledPartTransforms())
+        {
+            if (part_to_add->getId() != part->getId())
+                neighbour_assembly->setAssembledPart(part_to_add, transform_to_add);
+
+            //For the remove part, add it to the unassemlbed parts map and set the transform as the transofmr of the part in the initial assembly
+            else
+                neighbour_assembly->setUnassembledPart(part_to_add, initial_assembly_->getUnassembledPartTransforms()[part_to_add]);  
+            
         }
 
         neighbour_node->assembly_ = neighbour_assembly;
 
-        neighbour_node->id_ = nodeIdGenerator(neighbour_assembly->getPartIds());
+        neighbour_node->id_ = nodeIdGenerator(neighbour_assembly->getAssembledPartIds());
 
         neighbours.push_back(neighbour_node);
         
@@ -711,57 +713,48 @@ size_t Assembler::nodeIdGenerator(std::vector<size_t> object_ids)
     return next_node_ID_ - 1;
 }
 
+/* Create a new set assembly state, for now just copying over the part positions
+*/
 void Assembler::generateInitialAssembly()
 {
-    std::cout << std::endl << "Generating initial assembly" << std::endl;
+    RCLCPP_INFO(logger(), "Generating initial assembly");
 
     initial_assembly_ = std::shared_ptr<Assembly>(new Assembly());
 
-    for (std::shared_ptr<Part> part : target_assembly_->getParts())
+    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms()) //No unassembled parts in target assembly
     {
-        std::cout << "Target Part: " << part->getId() << std::endl;
-
-        initial_assembly_->addPart(part->clone());
-
-        std::cout << "Initial Part: " << initial_assembly_->getParts().back()->getId() << std::endl;
+        initial_assembly_->setUnassembledPart(part, transform);
     }
 }
 
+/* Create printable jigs for each external part to fit int he parts bay. Also allocates each external
+part to a bay in the parts bay and sets the transforms of the parts in the initial assembly
+*/
 void Assembler::generateNegatives()
 {
-    std::cout << "Generating negatives" << std::endl;
+    RCLCPP_INFO(logger(), "Generating external part jigs");
 
-    for (std::shared_ptr<Part> part : initial_assembly_->getParts())
+    for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms())
     {
-        std::cout << "Part type: " << part->getType() << std::endl;
-
         //Only create negatives or external parts
         if (part->getType() != Part::EXTERNAL)
             continue;
 
-        std::cout << "Creating part negative" << std::endl;
-
-        part->positionPartInBay(bay_occupancy_);
-
         CradleGenerator cradle_gen(part->getName(), *part->getShape());
 
         cradle_gen.createNegative();
-
-        //part->createNegative();
-
-        //part->createNegativeAndPositionPart(bay_occupancy_);
     }
 }
 
+/* Generate both vacuum grasps and parallel plate gripper grasps for parts
+*/
 void Assembler::generateGrasps()
 {
-    std::cout << "Generating grasps" << std::endl;
-
-    for (std::shared_ptr<Part> part : target_assembly_->getParts())
+    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms()) //No unassembled parts in target assembly
     {
         if (part->getType() == Part::INTERNAL)
-            part->generatePPGGraspPosition();
+            part->setPPGGrasp(PPGGraspGenerator::generate(part));
 
-        part->generateVacuumGraspPosition();
+        part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
     }
 }

@@ -3,6 +3,8 @@
 
 #include "assembler/MeshFunctions.hpp"
 
+#include "assembler/PPGGraspGenerator.hpp"
+
 class Part
 {
 public:
@@ -18,35 +20,28 @@ public:
 
     Part() = default;
 
-    //Copy constructor
-    Part(const Part& other) : shape_(std::make_shared<TopoDS_Shape>(*other.shape_)), id_(other.id_), type_(other.type_), name_(other.name_), vacuum_grasp_position_(other.vacuum_grasp_position_) {}
-
-    // Deep copy
-    std::shared_ptr<Part> clone() const {
-        return std::make_shared<Part>(*this); 
-    }
-
     void translate(gp_Vec translation) {shape_ = std::make_shared<TopoDS_Shape>(TranslateShape(*shape_, translation));}
 
     bool collide(std::shared_ptr<Part> otherPart);
 
     void setCentroidPosition(gp_Pnt position) {shape_ = std::make_shared<TopoDS_Shape>(ShapeSetCentroid(*shape_, position));}
 
-    void positionPartInBay(std::vector<std::vector<bool>>& occupancy);
+    gp_Pnt generateBayPosition(std::vector<std::vector<bool>>& occupancy);
 
-    void generateVacuumGraspPosition();
-
-    void generatePPGGraspPosition();
+    // void generatePPGGraspPosition();
 
     void saveShape(std::string filename) {SaveShapeAsSTL(*shape_, filename);}
 
+    void setVacuumGrasp(gp_Pnt grasp) { vacuum_grasp_position_ = grasp; }
+
+    void setPPGGrasp(PPGGrasp grasp) { ppg_grasp_ = grasp; }
+
     gp_Pnt                          getVacuumGrasp()        { return vacuum_grasp_position_; }
-    gp_Vec                          getPPGGraspPosition()   { return ppg_grasp_position_; }
-    Standard_Real                   getPPGGraspRotation()   { return ppg_grasp_rotation_; }
-    Standard_Real                   getPPGGraspWidth()      { return ppg_grasp_width_; }
-    gp_Pnt                          getCoM()                { return ShapeCenterOfMass(*shape_); }
-    gp_Pnt                          getCentroid()           { return ShapeCentroid(*shape_); }
-    Standard_Real                   getHighestPoint()       { return ShapeHighestPoint(*shape_); }
+    PPGGrasp                        getPPGGrasp()           { return ppg_grasp_; }
+
+    // gp_Pnt                          getCoM()                { return ShapeCenterOfMass(*shape_); }
+    // gp_Pnt                          getCentroid()           { return ShapeCentroid(*shape_); }
+    // Standard_Real                   getHighestPoint()       { return ShapeHighestPoint(*shape_); }
 
     PART_TYPE                       getType()               { return type_; }
     size_t                          getId()                 { return id_; }
@@ -55,7 +50,7 @@ public:
 
 private:
 
-    TopoDS_Shape GenerateGripperPlate(gp_Dir normal, gp_Pnt center);
+    //TopoDS_Shape GenerateGripperPlate(gp_Dir normal, gp_Pnt center);
 
     std::shared_ptr<TopoDS_Shape> shape_;
 
@@ -63,19 +58,11 @@ private:
 
     gp_Pnt vacuum_grasp_position_;  //Relative to CoM
 
-    gp_Vec ppg_grasp_position_;  //Relative to CoM
-
-    Standard_Real ppg_grasp_rotation_;
-
-    Standard_Real ppg_grasp_width_;
+    PPGGrasp ppg_grasp_;
 
     size_t id_;
 
     std::string name_;
-
-    size_t bay_index_ = -1;
-
-    size_t bay_size_index_ = -1; 
 };
 
 #endif

@@ -12,6 +12,8 @@ class aiScene;
 
 class Assembly;
 
+class Part;
+
 class AssemblyNode;
 
 class Assembler {
@@ -29,9 +31,9 @@ private:
 
     void generateInitialAssembly();
 
-    void generateCommandFile();
+    void generateInitialPartPositions();
 
-    void handleInternalParts();
+    void generateCommandFile();
 
     std::vector<size_t> generatePartAdditionOrder();
 
@@ -49,6 +51,8 @@ private:
 
     bool arrangeInternalParts();
 
+    void alignTargetAssemblyToInitialAssembly();
+
     std::vector<std::shared_ptr<AssemblyNode>> breadthFirstZAssembly();
 
     std::vector<std::shared_ptr<AssemblyNode>> findNodeNeighbours(std::shared_ptr<AssemblyNode> node);
@@ -58,6 +62,8 @@ private:
     std::shared_ptr<Assembly> target_assembly_;
 
     std::vector<std::shared_ptr<AssemblyNode>> assembly_path_;
+
+    std::shared_ptr<Part> base_part_;
 
     std::string output_path_;
     std::string input_path_;

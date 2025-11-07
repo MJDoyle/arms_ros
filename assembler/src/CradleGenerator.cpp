@@ -2,7 +2,7 @@
 
 #include "assembler/Config.hpp"
 
-
+#include "assembler/Logger.hpp"
 
 
 void CradleGenerator::createNegative()
@@ -101,10 +101,6 @@ TopTools_ListOfShape CradleGenerator::bottomEdgesFlatHorizontalFaces()
         if (std::abs(P0.Z() - P1.Z()) > 0.01)
             continue;
 
-        std::cout << "Edge" << std::endl;
-        std::cout << "P0: " << P0.X() << " " << P0.Y() << " " << P0.Z() << std::endl;
-        std::cout << "P1: " << P1.X() << " " << P1.Y() << " " << P1.Z() << std::endl;
-
         bool downFaceFound = false;
 
         if (edgeToFaceMap.Contains(edge)) 
@@ -119,7 +115,8 @@ TopTools_ListOfShape CradleGenerator::bottomEdgesFlatHorizontalFaces()
                 Standard_Real first, last;
                 Handle(Geom2d_Curve) curve2d = BRep_Tool::CurveOnSurface(edge, face, first, last);
                 if (curve2d.IsNull()) {
-                    std::cerr << "No 2D curve on surface found!" << std::endl;
+                    RCLCPP_FATAL(logger(), "No 2D curve on surface found");
+                    rclcpp::shutdown();
                     return result;
                 }
 
@@ -167,9 +164,6 @@ TopTools_ListOfShape CradleGenerator::bottomEdgesFlatHorizontalFaces()
 TopoDS_Shape CradleGenerator::createBoxWithPose(double width, double height, double length, gp_Pnt target_center, gp_Dir target_direction)
 {
     TopoDS_Shape box = BRepPrimAPI_MakeBox(length, width, height).Shape();
-
-
-    std::cout << "creating box with target direction: " << target_direction.X() << " " << target_direction.Y() << " " << target_direction.Z() << std::endl;
 
     //Rotate box
     gp_Dir  source_dir (1,0,0);             // X of the box
@@ -222,7 +216,8 @@ gp_Vec CradleGenerator::outwardsNormalOfEdge(TopoDS_Edge edge, TopTools_IndexedD
             Standard_Real first, last;
             Handle(Geom2d_Curve) curve2d = BRep_Tool::CurveOnSurface(edge, face, first, last);
             if (curve2d.IsNull()) {
-                std::cerr << "No 2D curve on surface found!" << std::endl;
+                RCLCPP_FATAL(logger(), "No 2D curve on surface found");
+                rclcpp::shutdown();
                 return outwards_normal;
             }
 
@@ -252,8 +247,6 @@ gp_Vec CradleGenerator::outwardsNormalOfEdge(TopoDS_Edge edge, TopTools_IndexedD
             }
         }
     }
-
-    std::cout << "outwards normal: " << outwards_normal.X() << " " << outwards_normal.Y() << " " << outwards_normal.Z() << std::endl;
 
     return outwards_normal;
 }
@@ -402,7 +395,8 @@ void CradleGenerator::createNegative2()
                 Standard_Real first, last;
                 Handle(Geom2d_Curve) curve2d = BRep_Tool::CurveOnSurface(boxEdge, boxFace, first, last);
                 if (curve2d.IsNull()) {
-                    std::cerr << "No 2D curve on surface found!" << std::endl;
+                    RCLCPP_FATAL(logger(), "No 2D curve on surface found");
+                    rclcpp::shutdown();
                     return;
                 }
 
@@ -425,8 +419,6 @@ void CradleGenerator::createNegative2()
                 }
 
                 face_normals.push_back(normal);
-
-                std::cout << "box_face_normal: " << normal.X() << " " << normal.Y() << " " << normal.Z() << std::endl;
             }
 
             
@@ -463,12 +455,6 @@ void CradleGenerator::createNegative2()
             }
 
             //Use the normal index to select the correct face
-
-            std::cout << "Box face and edge found:" << std::endl;
-
-            std::cout << face_normals[0].X() << " " << face_normals[0].Y() << " " << face_normals[0].Z() << std::endl;
-
-            std::cout << face_normals[1].X() << " " << face_normals[1].Y() << " " << face_normals[1].Z() << std::endl;
 
             int normal_index = 0;
 
