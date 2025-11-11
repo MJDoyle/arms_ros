@@ -74,8 +74,10 @@ void Assembler::generateAssemblySequence()
     assembly_path_ = breadthFirstZAssembly();
 
     if (assembly_path_.size() < 2)
+    {
         RCLCPP_WARN(logger(), "Only one assembly state found");
         return;
+    }
 
     //First node on assembly path has no assembled parts
     //Second node has one assembled part - this should be internal and is the base part
@@ -752,9 +754,10 @@ void Assembler::generateGrasps()
 {
     for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms()) //No unassembled parts in target assembly
     {
-        if (part->getType() == Part::INTERNAL)
-            part->setPPGGrasp(PPGGraspGenerator::generate(part));
+        //if (part->getType() == Part::INTERNAL)
+        //    part->setPPGGrasp(PPGGraspGenerator::generate(part));
 
-        part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
+        if (part->getType() == Part::EXTERNAL)
+            part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
     }
 }

@@ -39,7 +39,7 @@ public:
     gp_Pnt                          getVacuumGrasp()        { return vacuum_grasp_position_; }
     PPGGrasp                        getPPGGrasp()           { return ppg_grasp_; }
 
-    // gp_Pnt                          getCoM()                { return ShapeCenterOfMass(*shape_); }
+    gp_Pnt                          getCoM()                { return ShapeCenterOfMass(*shape_); }  //TODO maybe get rid of this, only in PPGGraspGenerator
     // gp_Pnt                          getCentroid()           { return ShapeCentroid(*shape_); }
     // Standard_Real                   getHighestPoint()       { return ShapeHighestPoint(*shape_); }
 

@@ -3,6 +3,8 @@
 
 #include "assembler/MeshFunctions.hpp"
 
+class Part;
+
 class VacuumGraspGenerator
 {
     public:

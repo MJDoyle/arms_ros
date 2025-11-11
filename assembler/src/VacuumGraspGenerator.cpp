@@ -2,14 +2,18 @@
 
 #include "assembler/Logger.hpp"
 
+#include "assembler/Part.hpp"
+
+#include "assembler/Config.hpp"
+
 /*  
     Creates a simulated vacuum nozzle and searches for locations on the top face of a part where the nozzle has a strong overlap
 */
-static gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
+gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 {
     RCLCPP_INFO(logger(), "Generating vacuum grasp");
 
-    TopoDS_Shape shape = *(part->getShape())
+    TopoDS_Shape shape = *(part->getShape());
     TopoDS_Shape nozzle = BRepPrimAPI_MakeCylinder(4, 1);
     double nozzle_full_volume = ShapeVolume(nozzle);
     gp_Pnt part_com = ShapeCenterOfMass(shape);

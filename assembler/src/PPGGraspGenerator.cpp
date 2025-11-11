@@ -2,6 +2,10 @@
 
 #include "assembler/Logger.hpp"
 
+#include "assembler/Part.hpp"
+
+#include "assembler/Config.hpp"
+
 PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
 {
     struct Grasp
@@ -20,12 +24,12 @@ PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
     };
 
 
-    if (part->getType() == PART_TYPE::SCREW)
-        return;
+    if (part->getType() == Part::PART_TYPE::SCREW)
+        return PPGGrasp();
 
     RCLCPP_INFO(logger(), "Generating PPG grasp");
 
-    TopoDS_Shape shape = *(part->getShape())
+    TopoDS_Shape shape = *(part->getShape());
 
     //Iterate through the faces of the part and get their normals AND antinormals
 
@@ -105,15 +109,15 @@ PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
             //Check x y distance from center of delta to CoM
             gp_Pnt delta_center = centers[a].Translated(0.5 * delta);
 
-            gp_Vec com_xy_distance(delta_center.X() - getCoM().X(), delta_center.Y() - getCoM().Y(), 0);
+            gp_Vec com_xy_distance(delta_center.X() - part->getCoM().X(), delta_center.Y() - part->getCoM().Y(), 0);
 
             float com_xy_mag = com_xy_distance.Magnitude();
 
             if (com_xy_mag > 5)
                 continue;
 
-            TopoDS_Shape gripper_plate_1 = GenerateGripperPlate(normals[a], centers[a]);
-            TopoDS_Shape gripper_plate_2 = GenerateGripperPlate(normals[b], centers[b]);
+            TopoDS_Shape gripper_plate_1 = generateGripperPlate(normals[a], centers[a], shape);
+            TopoDS_Shape gripper_plate_2 = generateGripperPlate(normals[b], centers[b], shape);
 
             //Intersect the paddles and the part
             TopoDS_Shape intersection_1 = ShapeIntersection(gripper_plate_1, shape);
@@ -210,7 +214,7 @@ PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
 
         Standard_Real grasp_height = best_grasp.gripper_bottom_height + height_offset;
 
-        Standard_Real shape_lowest_point = ShapeLowestPoint(*shape_);
+        Standard_Real shape_lowest_point = ShapeLowestPoint(shape);
 
         Standard_Real lowest_point_delta = shape_lowest_point - grasp_height;
 
@@ -220,13 +224,13 @@ PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
             grasp_height += lowest_point_delta + 0.5;
         }
 
+        PPGGrasp found_grasp = PPGGrasp();
 
+        found_grasp.position_ = SubtractPoints(gp_Pnt(grasp_center.X(), grasp_center.Y(), grasp_height), part->getCoM());
 
-        ppg_grasp_position_ = SubtractPoints(gp_Pnt(grasp_center.X(), grasp_center.Y(), grasp_height), getCoM());
+        found_grasp.rotation_ = grasp_angle;
 
-        ppg_grasp_rotation_ = grasp_angle;
-
-        ppg_grasp_width_ = grasp_width;
+        found_grasp.width_ = grasp_width;
 
         // std::cout << "Grasp pos: " << ppg_grasp_position_.X() << " " << ppg_grasp_position_.Y() << " " << ppg_grasp_position_.Z() << std::endl;
         // std::cout << "Grasp angle: " << grasp_angle << std::endl;
@@ -243,6 +247,8 @@ PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
         ss << WORKING_DIR << part->getName() << "_ppg_grasp.stl";
 
         writer.Write(best_grasp.padels_compound, ss.str().c_str());
+
+        return found_grasp;
     }
 
     return PPGGrasp();
@@ -250,7 +256,7 @@ PPGGrasp PPGGraspGenerator::generate(std::shared_ptr<Part> part)
     //TODO need to check collisions and 'size' of grasp
 }
 
-TopoDS_Shape Part::GenerateGripperPlate(gp_Dir normal, gp_Pnt center)
+TopoDS_Shape PPGGraspGenerator::generateGripperPlate(gp_Dir normal, gp_Pnt center, TopoDS_Shape shape)
 {
     TopoDS_Shape gripper_plate = BRepPrimAPI_MakeBox(10, 4, 12).Shape();
     gp_Dir source_normal(0, 1, 0);
@@ -288,7 +294,7 @@ TopoDS_Shape Part::GenerateGripperPlate(gp_Dir normal, gp_Pnt center)
     gripper_plate = transTransformer.Shape();
 
     //Check bottom of gripper plate and move it up slightly above part
-    Standard_Real shape_lowest_point = ShapeLowestPoint(*shape_);
+    Standard_Real shape_lowest_point = ShapeLowestPoint(shape);
 
     Standard_Real plate_lowest_point = ShapeLowestPoint(gripper_plate);
 

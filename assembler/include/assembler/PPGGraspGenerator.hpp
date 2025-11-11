@@ -22,7 +22,7 @@ class PPGGraspGenerator
 
     private:
 
-    static TopoDS_Shape generateGripperPlate();
+    static TopoDS_Shape generateGripperPlate(gp_Dir normal, gp_Pnt center, TopoDS_Shape shape);
 };
 
 #endif
