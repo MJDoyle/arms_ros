@@ -1,38 +1,21 @@
-#VRML_SIM R2023b utf8
+#VRML_SIM R2025a utf8
 
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
 
 WorldInfo {
-  info [
-    "Assembly simulation world with ROS2 supervisor controller"
-  ]
   title "Assembler World"
-  contactProperties [
-    ContactProperties {
-      material1 "default"
-      material2 "default"
-      coulombFriction [
-        0.5
-      ]
-      bounce 0.1
-      bounceVelocity 0.01
-    }
-  ]
 }
 
 Viewpoint {
-  orientation -0.3 0.9 0.15 0.8
-  position 3 2 4
-  follow "supervisor"
+  position 0 -1.5 2
+  orientation -0.4 0.4 0.8 1.76
+  fieldOfView 0.8
 }
 
-TexturedBackground {
-}
-
-TexturedBackgroundLight {
-}
+TexturedBackground { }
+TexturedBackgroundLight { }
 
 RectangleArena {
   name "assembly_floor"
@@ -41,58 +24,51 @@ RectangleArena {
   wallHeight 0.1
 }
 
-# This is your supervisor robot that runs the controller
-DEF supervisor Robot {
-  name "supervisor"
-  controller "supervisor_controller"
+DEF build_area Group {
+  children [
+
+    # Left plate
+    Solid {
+      name "print_bed"
+      translation -0.22 0 0.01
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 0.66 0.11   # yellow plate
+          }
+          geometry Box {
+            size 0.4 0.4 0.02       # width depth height
+          }
+        }
+      ]
+      boundingObject Box { size 0.4 0.4 0.02 }
+      physics NULL                  # <-- static, fixed in place
+    }
+
+    # Right plate
+    Solid {
+      name "parts_bay"
+      translation 0.22 0 0.01
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.4 0.4 0.4
+          }
+          geometry Box {
+            size 0.4 0.4 0.02
+          }
+        }
+      ]
+      boundingObject Box { size 0.4 0.4 0.02 }
+      physics NULL                  # <-- static, fixed in place
+    }
+
+  ]
+}
+
+# Supervisor controlled via ROS2
+Robot {
+  name "arms"
   supervisor TRUE
-  translation 0 0 0.1
-  children [
-    # Optional: Add a visual representation
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.1 0.1 0.8
-        metalness 0.0
-        roughness 0.3
-      }
-      geometry Box {
-        size 0.1 0.1 0.05
-      }
-    }
-  ]
-}
-
-# Optional: Add some lighting
-SpotLight {
-  attenuation 0 0 1
-  beamWidth 0.9
-  cutOffAngle 1.2
-  direction 0 -1 0
-  intensity 5
-  location 0 3 0
-  castShadows TRUE
-}
-
-# Optional: Add a workbench or assembly area
-DEF workbench Solid {
-  translation 0 0 0.4
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.8 0.6 0.4
-        metalness 0.0
-        roughness 0.8
-      }
-      geometry Box {
-        size 2 1 0.05
-      }
-    }
-  ]
-  name "workbench"
-  boundingObject Box {
-    size 2 1 0.05
-  }
-  physics Physics {
-    density -1
-  }
+  controller "<extern>"
 }
