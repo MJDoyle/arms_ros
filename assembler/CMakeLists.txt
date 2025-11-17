@@ -13,6 +13,7 @@ find_package(assembler_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(OpenCASCADE REQUIRED)
+find_package(webots_ros2_msgs REQUIRED)
 
 set(CMAKE_PREFIX_PATH "/usr/local" ${CMAKE_PREFIX_PATH})
 find_package(CGAL REQUIRED)
@@ -42,6 +43,7 @@ ament_target_dependencies(assembler_node
   assembler_msgs
   sensor_msgs
   visualization_msgs
+  webots_ros2_msgs
   rclcpp
   rclcpp_action
   rclcpp_components)

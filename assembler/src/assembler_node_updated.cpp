@@ -11,7 +11,7 @@
 
 #include <geometry_msgs/msg/point.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
-#include <webots_ros2_msgs/srv/spawn_node_from_string.hpp>
+#include <webots_ros2_driver/srv/spawn_node_from_string.hpp>
 
 #include <iostream>
 #include <thread>
@@ -28,8 +28,8 @@ public:
     RCLCPP_INFO(this->get_logger(), "Model loader node starting...");
 
     // Create client for supervisor spawn service
-    supervisor_spawn_client_ = this->create_client<webots_ros2_msgs::srv::SpawnNodeFromString>(
-        "/Ros2Supervisor/spawn_node_from_string");
+    supervisor_spawn_client_ = this->create_client<webots_ros2_driver::srv::SpawnNodeFromString>(
+        "/supervisor/spawn_node_from_string");
 
     // Wait for service to be available with a timeout
     if (!supervisor_spawn_client_->wait_for_service(std::chrono::seconds(10))) {
@@ -108,49 +108,45 @@ private:
    * @param color RGB color (0-1 range)
    */
   void spawn_cube(
-    const std::string& name,
-    const geometry_msgs::msg::Point& position,
-    const geometry_msgs::msg::Vector3& size,
-    const std::array<double, 3>& color) {
-
-  if (!supervisor_available_) {
-    RCLCPP_WARN(this->get_logger(),
-                "Supervisor service not available, cannot spawn cube");
-    return;
-  }
-
-  // Generate VRML code for the cube
-  std::string vrml = WebotsSpawner::generateCubeVRML(name, position, size, color);
-
-  RCLCPP_INFO_STREAM(this->get_logger(),
-      "Spawning cube '" << name << "' via SpawnNodeFromString:\n" << vrml);
-
-  using Service = webots_ros2_msgs::srv::SpawnNodeFromString;
-
-  auto request = std::make_shared<webots_ros2_msgs::srv::SpawnNodeFromString::Request>();
-  request->data = vrml;   // the ONLY field in the request
-
-  RCLCPP_INFO_STREAM(this->get_logger(),
-            "A");
-
-  // Async call – callback gets only a future<Response>
-  supervisor_spawn_client_->async_send_request(
-    request,
-    [this, name](rclcpp::Client<Service>::SharedFuture future) {
-      auto result = future.get();
-      if (result->success) {
-        RCLCPP_INFO_STREAM(this->get_logger(),
-            "Successfully spawned cube '" << name << "'");
-      } else {
-        RCLCPP_ERROR_STREAM(this->get_logger(),
-            "Failed to spawn cube '" << name << "'");
-      }
+      const std::string& name,
+      const geometry_msgs::msg::Point& position,
+      const geometry_msgs::msg::Vector3& size,
+      const std::array<double, 3>& color) {
+    
+    if (!supervisor_available_) {
+      RCLCPP_WARN(this->get_logger(), "Supervisor service not available, cannot spawn cube");
+      return;
     }
-  );
 
-  RCLCPP_INFO_STREAM(this->get_logger(),
-            "B");
-}
+    // Generate VRML code for the cube
+    std::string vrml = WebotsSpawner::generateCubeVRML(name, position, size, color);
+    
+    RCLCPP_INFO_STREAM(this->get_logger(), "Spawning cube '" << name << "' at ("
+        << position.x << ", " << position.y << ", " << position.z << ")");
+
+    // Create service request
+    auto request = std::make_shared<webots_ros2_driver::srv::SpawnNodeFromString::Request>();
+    request->node_string = vrml;
+    request->node_parent_name = "assembly_parts";  // Spawn into assembly_parts group
+    request->index = -1;  // Append to the end
+
+    // Send request asynchronously
+    auto future = supervisor_spawn_client_->async_send_request(request,
+        [this, name](rclcpp::Client<webots_ros2_driver::srv::SpawnNodeFromString>::SharedFuture response) {
+          try {
+            auto result = response.get();
+            if (result->node_name.empty()) {
+              RCLCPP_WARN_STREAM(this->get_logger(), "Failed to spawn cube '" << name << "'");
+            } else {
+              RCLCPP_INFO_STREAM(this->get_logger(), "Successfully spawned cube '" << name 
+                  << "' (node name: " << result->node_name << ")");
+            }
+          } catch (const std::exception &e) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Exception when spawning cube '" << name 
+                << "': " << e.what());
+          }
+        });
+  }
 
   void process_model_execute(
       const std::shared_ptr<
@@ -179,7 +175,7 @@ private:
   rclcpp_action::Server<assembler_msgs::action::ProcessModel>::SharedPtr
       process_model_action_server_;
 
-  rclcpp::Client<webots_ros2_msgs::srv::SpawnNodeFromString>::SharedPtr
+  rclcpp::Client<webots_ros2_driver::srv::SpawnNodeFromString>::SharedPtr
       supervisor_spawn_client_;
 
   bool supervisor_available_{false};

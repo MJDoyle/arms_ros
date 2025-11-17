@@ -66,9 +66,8 @@ DEF build_area Group {
   ]
 }
 
-# Supervisor controlled via ROS2
-Robot {
-  name "arms"
-  supervisor TRUE
-  controller "<extern>"
+DEF assembly_parts Group {
+  children [
+    # dynamically added during simulation
+  ]
 }
