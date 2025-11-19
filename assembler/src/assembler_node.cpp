@@ -1,3 +1,5 @@
+//To call: ros2 action send_goal /process_model assembler_msgs/action/ProcessModel "{model_file: 'your/path/model.json'}"
+
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_components/register_node_macro.hpp>

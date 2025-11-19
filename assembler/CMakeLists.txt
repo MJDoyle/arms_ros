@@ -15,28 +15,36 @@ find_package(yaml-cpp REQUIRED)
 find_package(OpenCASCADE REQUIRED)
 find_package(webots_ros2_msgs REQUIRED)
 
-set(CMAKE_PREFIX_PATH "/usr/local" ${CMAKE_PREFIX_PATH})
-find_package(CGAL REQUIRED)
+#set(CMAKE_PREFIX_PATH "/usr/local" ${CMAKE_PREFIX_PATH})
+#find_package(CGAL REQUIRED)
 
-find_path(ASSIMP_INCLUDE_DIR NAMES assimp/Importer.hpp)
-find_library(ASSIMP_LIBRARY NAMES assimp)
+#find_path(ASSIMP_INCLUDE_DIR NAMES assimp/Importer.hpp)
+#find_library(ASSIMP_LIBRARY NAMES assimp)
 
-message(STATUS "CGAL include dirs: ${CGAL_INCLUDE_DIRS}")
-message(STATUS "CGAL libraries: ${CGAL_LIBRARIES}")
+#message(STATUS "CGAL include dirs: ${CGAL_INCLUDE_DIRS}")
+#message(STATUS "CGAL libraries: ${CGAL_LIBRARIES}")
 
-include_directories((${ASSIMP_INCLUDE_DIR}))
+#include_directories((${ASSIMP_INCLUDE_DIR}))
 
 add_library(assembler_node SHARED
   src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/CradleGenerator.cpp src/PPGGraspGenerator.cpp src/VacuumGraspGenerator.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp src/Config.cpp)
+
+target_include_directories(assembler_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${OpenCASCADE_INCLUDE_DIR}
+  ${OpenCASCADE_INCLUDE_DIRS}
+)
+  
 target_link_libraries(assembler_node
-  ${CGAL_LIBRARIES}
+  #${CGAL_LIBRARIES}
   ${OpenCASCADE_LIBRARIES}
   yaml-cpp::yaml-cpp
 )
-target_include_directories(assembler_node PRIVATE
-  ${CGAL_INCLUDE_DIRS}
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
+#target_include_directories(assembler_node PRIVATE
+  #${CGAL_INCLUDE_DIRS}
+#  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#  $<INSTALL_INTERFACE:include>)
 target_compile_definitions(assembler_node
   PRIVATE "CUSTOM_ACTION_CPP_BUILDING_DLL")
 ament_target_dependencies(assembler_node
@@ -56,50 +64,16 @@ install(DIRECTORY
 )
 
 # Install worlds directory if you have one
-install(DIRECTORY
-  worlds
-  DESTINATION share/${PROJECT_NAME}/
-)
+#install(DIRECTORY
+#  worlds
+#  DESTINATION share/${PROJECT_NAME}/
+#)
 
 # Install config files (RViz, parameters, etc.)
-install(DIRECTORY
-  config
-  DESTINATION share/${PROJECT_NAME}/
-)
-
-# include_directories(include)
-
-# link_directories("/usr/lib")
-
-# Declare the package
-# add_executable(assembler_node src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp)
-
-# Link against the necessary libraries
-# ament_target_dependencies(assembler_node
-#   ament_index_cpp
-#   rclcpp
-#   sensor_msgs
-#   assembler_msgs
-#   visualization_msgs
-# )
-
-# target_include_directories(assembler_node
-#   PRIVATE
-#   ${CGAL_INCLUDE_DIRS}
-# )
-
-
-# Link CGAL, Assimp, and OpenGL libraries
-# target_link_libraries(assembler_node
-#   ${CGAL_LIBRARIES}
-#   ${OpenCASCADE_LIBRARIES}
-#   yaml-cpp::yaml-cpp
-# )
-
-# # Install executables and libraries
-# install(TARGETS assembler_node
-#   DESTINATION lib/${PROJECT_NAME}
-# )
+#install(DIRECTORY
+#  config
+#  DESTINATION share/${PROJECT_NAME}/
+#)
 
 # ament_export_targets(export_assembler_node)
 install(TARGETS

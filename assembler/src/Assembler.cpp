@@ -457,7 +457,8 @@ void Assembler::generateSlicerGcode()
 
     std::stringstream command_ss;
 
-    command_ss << "(cd " << WORKING_DIR << " && " << "prusa-slicer --export-gcode --dont-arrange --merge --output assembler.gcode --load arms_prusa_config.ini";
+    //command_ss << "(cd " << WORKING_DIR << " && " << "prusa-slicer --export-gcode --dont-arrange --merge --output assembler.gcode --load arms_prusa_config.ini";
+    command_ss << "(cd " << WORKING_DIR << " && " << "slic3r --dont-arrange --merge --output assembler.gcode --load arms_prusa_config.ini";
 
     for (std::string filename : filenames)
         command_ss << " " << filename;
