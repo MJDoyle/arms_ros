@@ -273,6 +273,31 @@ gp_Pnt getEdgeEnd(TopoDS_Edge edge)
     return curve->Value(last);
 }
 
+gp_Dir outwardFaceNormal(TopoDS_Face face)
+{
+    gp_Dir normal;
+    Standard_Real umin, umax, vmin, vmax;
+
+    // Pick a parameter on the face:
+    BRepTools::UVBounds(face, umin, umax, vmin, vmax);
+    Standard_Real u = (umin + umax) / 2;
+    Standard_Real v = (vmin + vmax) / 2;
+
+    Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
+
+    // Get geometric normal (could be inward)
+    GeomLProp_SLProps props(surf, u, v, 1, 1e-6);
+    if(props.IsNormalDefined()) {
+        normal = props.Normal();
+    }
+
+    // Now apply the face orientation:
+    if(face.Orientation() == TopAbs_REVERSED)
+        normal.Reverse();
+
+    return normal;
+}
+
 // void ProjectedContourFromShape(TopoDS_Shape shape, gp_Pnt origin, gp_Dir normal)
 // {
 //     gp_Pln plane(origin, normal);

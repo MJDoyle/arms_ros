@@ -171,4 +171,6 @@ gp_Pnt getEdgeStart(TopoDS_Edge edge);
 
 gp_Pnt getEdgeEnd(TopoDS_Edge edge);
 
+gp_Dir outwardFaceNormal(TopoDS_Face face);
+
 #endif
