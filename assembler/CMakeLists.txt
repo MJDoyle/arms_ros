@@ -15,6 +15,8 @@ find_package(yaml-cpp REQUIRED)
 find_package(OpenCASCADE REQUIRED)
 find_package(webots_ros2_msgs REQUIRED)
 
+add_compile_options(-Wno-deprecated-declarations) #supress OCCT iterator deprecations
+
 #set(CMAKE_PREFIX_PATH "/usr/local" ${CMAKE_PREFIX_PATH})
 #find_package(CGAL REQUIRED)
 
