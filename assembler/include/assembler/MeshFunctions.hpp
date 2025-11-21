@@ -127,6 +127,8 @@
 
 #include <fstream>
 
+extern const gp_Dir UPWARDS;
+
 TopoDS_Shape ShapeIntersection(TopoDS_Shape shape_A, TopoDS_Shape shape_B);
 
 Standard_Real ShapeVolume(TopoDS_Shape shape);
@@ -172,5 +174,7 @@ gp_Pnt getEdgeStart(TopoDS_Edge edge);
 gp_Pnt getEdgeEnd(TopoDS_Edge edge);
 
 gp_Dir outwardFaceNormal(TopoDS_Face face);
+
+double faceArea(const TopoDS_Face& face);
 
 #endif

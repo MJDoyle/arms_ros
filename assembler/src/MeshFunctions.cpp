@@ -1,5 +1,7 @@
 #include "assembler/MeshFunctions.hpp"
 
+const gp_Dir UPWARDS = gp_Dir(0, 0, 1);
+
 TopoDS_Shape ShapeIntersection(TopoDS_Shape shape_A, TopoDS_Shape shape_B)
 {
     return BRepAlgoAPI_Common(shape_A, shape_B);
@@ -296,6 +298,13 @@ gp_Dir outwardFaceNormal(TopoDS_Face face)
         normal.Reverse();
 
     return normal;
+}
+
+double faceArea(const TopoDS_Face& face)
+{
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(face, props);
+    return props.Mass();
 }
 
 // void ProjectedContourFromShape(TopoDS_Shape shape, gp_Pnt origin, gp_Dir normal)
