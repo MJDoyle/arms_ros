@@ -9,6 +9,8 @@ class VacuumGraspGenerator
 {
     public:
 
+    static gp_Pnt generate_simple(std::shared_ptr<Part> part);
+
     static gp_Pnt generate(std::shared_ptr<Part> part);
 };
 

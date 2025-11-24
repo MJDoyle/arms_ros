@@ -6,10 +6,241 @@
 
 #include "assembler/Config.hpp"
 
+
+gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
+{
+    RCLCPP_INFO(logger(), "Generating vacuum grasp");
+
+    struct CandidateGrasp {
+        double com_distance;
+        gp_Pnt position;
+        float nozzle_intersection;
+        float tip_intersection;
+    };
+
+    TopoDS_Shape shape = *(part->getShape());
+    double nozzle_height = 20;
+    double nozzle_tip_height = 1;
+    double nozzle_radius = 4.2;
+    TopoDS_Shape nozzle_tip = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_tip_height);
+    TopoDS_Shape nozzle = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_height);
+    double nozzle_volume = ShapeVolume(nozzle);
+    double nozzle_tip_volume = ShapeVolume(nozzle_tip);
+    gp_Pnt shape_com = ShapeCenterOfMass(shape);
+
+    std::vector<CandidateGrasp> candidate_grasps;
+
+    for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next())
+    {
+        TopoDS_Face face = TopoDS::Face(exp.Current());
+
+        gp_Dir normal = outwardFaceNormal(face);
+
+        //Ignore faces that are not planar
+        if (!BRep_Tool::Surface(face)->IsKind(STANDARD_TYPE(Geom_Plane)))
+            continue;
+
+        //Ignore faces with a not vertical normal
+        if (normal.Angle(UPWARDS) > 0.05)
+            continue;
+
+        //Ignore faces that are too small
+        if (faceArea(face) < 50)
+            continue;
+
+
+
+ 
+        Handle(Geom_Plane) gpln = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(face));
+        gp_Pln plane = gpln->Pln();
+        
+        double largest_face_axis = std::max(ShapeAxisSize(face, 0), ShapeAxisSize(face, 1));  //TODO
+
+        gp_Pnt face_centroid = ShapeCenterOfMass(face);
+
+        Standard_Real face_highest_point = ShapeHighestPoint(face);
+
+        RCLCPP_INFO(logger(), "Checking face of area %f and highest point %f", faceArea(face), face_highest_point);
+
+        // gp_Ax3 ax3 = plane.Position();
+
+        // gp_Dir X = ax3.XDirection();
+        // gp_Dir Y = ax3.YDirection();
+
+        // double w = 50;   // physical width of full grid TODO make this correspond to face/plane size
+        // int N = 25;
+
+        // double half = w * 0.5;
+        // double step = w / (N - 1);
+
+        // std::vector<gp_Pnt> grid;
+
+        // for (int i = 0; i < N; ++i)
+        // {
+        //     double dx = -half + i * step;
+
+        //     for (int j = 0; j < N; ++j)
+        //     {
+        //         double dy = -half + j * step;
+
+        //         gp_Pnt P = face_centroid
+        //                 .Translated(gp_Vec(X) * dx)
+        //                 .Translated(gp_Vec(Y) * dy);
+
+        //         double nozzle_x = P.X();
+        //         double nozzle_y = P.Y();
+        //         double nozzle_z = face_highest_point + 0.5 * nozzle_height;
+        //         double nozzle_tip_z = face_highest_point - 0.5 * nozzle_tip_height;
+
+        //         nozzle = ShapeSetCentroid(nozzle, gp_Pnt(nozzle_x, nozzle_y, nozzle_z));
+
+        //         nozzle_tip = ShapeSetCentroid(nozzle_tip, gp_Pnt(nozzle_x, nozzle_y, nozzle_tip_z));
+
+        //         //Intersect the nozzle and the part
+        //         TopoDS_Shape nozzle_intersection = ShapeIntersection(nozzle, shape);
+
+        //         double nozzle_intersection_ratio = 0;
+
+        //         if (!nozzle_intersection.IsNull())
+        //         {
+        //             nozzle_intersection_ratio = ShapeVolume(nozzle_intersection) / nozzle_volume;
+
+        //             //Nozzle clashes
+        //             if (nozzle_intersection_ratio > 0.01)
+        //                 continue;
+        //         }
+
+        //         //Intersect the nozzle tip and the part
+        //         TopoDS_Shape nozzle_tip_intersection = ShapeIntersection(nozzle_tip, shape);
+
+        //         if (nozzle_tip_intersection.IsNull())
+        //             continue;
+
+        //         double nozzle_tip_intersection_ratio = ShapeVolume(nozzle_tip_intersection) / nozzle_tip_volume;
+
+        //         if (nozzle_tip_intersection_ratio < 0.5)
+        //             continue;
+
+        //         gp_Vec com_delta = gp_Vec(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), 0);
+
+        //         CandidateGrasp grasp;
+
+        //         grasp.com_distance = com_delta.Magnitude();
+
+        //         grasp.position = gp_Pnt(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), nozzle_z - shape_com.Z());
+
+        //         grasp.nozzle_intersection = nozzle_intersection_ratio;
+
+        //         grasp.tip_intersection = nozzle_tip_intersection_ratio;
+
+        //         candidate_grasps.push_back(grasp);
+                        
+        //     }
+        // }
+
+        double nozzle_z = face_highest_point + 0.5 * nozzle_height;
+        double nozzle_tip_z = face_highest_point - 0.5 * nozzle_tip_height;
+
+        RCLCPP_INFO(logger(), "Nozzle height %f and tip height %f", nozzle_z, nozzle_tip_z);
+
+        for (int r = 0; r < largest_face_axis; r ++)
+        {
+            //Iterate over angle
+            for (int th = 0; th < 360; th += 90)
+            {
+                double nozzle_x = face_centroid.X() + r * cos(th * M_PI / 180);
+                double nozzle_y = face_centroid.Y() + r * cos(th * M_PI / 180);                
+
+                nozzle = ShapeSetCentroid(nozzle, gp_Pnt(nozzle_x, nozzle_y, nozzle_z));
+
+                nozzle_tip = ShapeSetCentroid(nozzle_tip, gp_Pnt(nozzle_x, nozzle_y, nozzle_tip_z));
+
+                //Intersect the nozzle and the part
+                TopoDS_Shape nozzle_intersection = ShapeIntersection(nozzle, shape);
+
+                double nozzle_intersection_ratio = 0;
+
+                if (!nozzle_intersection.IsNull())
+                {
+                    nozzle_intersection_ratio = ShapeVolume(nozzle_intersection) / nozzle_volume;
+
+                    //Nozzle clashes
+                    if (nozzle_intersection_ratio > 0.0001)
+                        continue;
+                }
+
+                //Intersect the nozzle tip and the part
+                TopoDS_Shape nozzle_tip_intersection = ShapeIntersection(nozzle_tip, shape);
+
+                if (nozzle_tip_intersection.IsNull())
+                    continue;
+
+                double nozzle_tip_intersection_ratio = ShapeVolume(nozzle_tip_intersection) / nozzle_tip_volume;
+
+                if (nozzle_tip_intersection_ratio < 0.5)
+                    continue;
+
+                gp_Vec com_delta = gp_Vec(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), 0);
+
+                CandidateGrasp grasp;
+
+                grasp.com_distance = com_delta.Magnitude();
+
+                grasp.position = gp_Pnt(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), nozzle_z - shape_com.Z());
+
+                grasp.nozzle_intersection = nozzle_intersection_ratio;
+
+                grasp.tip_intersection = nozzle_tip_intersection_ratio;
+
+                candidate_grasps.push_back(grasp);
+            }
+        }      
+    }
+    
+    if (candidate_grasps.size() == 0)
+    {
+        RCLCPP_FATAL(logger(), "No vacuum grasp found");
+        rclcpp::shutdown();
+        return gp_Pnt();
+    }
+
+    auto best_grasp_it = std::min_element(
+            candidate_grasps.begin(), candidate_grasps.end(),
+            [](auto& a, auto& b) { return a.com_distance < b.com_distance; }
+        );
+
+    RCLCPP_INFO(logger(), "Grasp position %f %f %f, nozzle intersection %f, tip intersection %f", best_grasp_it->position.X(), best_grasp_it->position.Y(), best_grasp_it->position.Z(), best_grasp_it->nozzle_intersection, best_grasp_it->tip_intersection);
+
+    TopoDS_Shape visual_nozzle = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_height);
+
+    visual_nozzle = ShapeSetCentroid(visual_nozzle, gp_Pnt(best_grasp_it->position.X() + shape_com.X(), best_grasp_it->position.Y() + shape_com.Y(), best_grasp_it->position.Z() + shape_com.Z()));
+
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+
+    builder.Add(compound, shape);
+
+    builder.Add(compound, visual_nozzle);
+
+    BRepMesh_IncrementalMesh mesher(compound, 0.1);
+
+    StlAPI_Writer writer;
+
+    std::stringstream ss;
+
+    ss << WORKING_DIR << part->getName() << "_vacuum_grasp.stl";
+
+    writer.Write(compound, ss.str().c_str());
+
+    return best_grasp_it->position.Translated(gp_Vec(0, 0, - nozzle_height * 0.5));
+}
+
+
 /*  
     Creates a simulated vacuum nozzle and searches for locations on the top face of a part where the nozzle has a strong overlap
 */
-gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
+gp_Pnt VacuumGraspGenerator::generate_simple(std::shared_ptr<Part> part)
 {
     RCLCPP_INFO(logger(), "Generating vacuum grasp");
 
