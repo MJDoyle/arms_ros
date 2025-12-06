@@ -71,7 +71,7 @@ void Assembler::generateAssemblySequence()
 
     generateInitialAssembly();  //Initial part positions not set here
 
-    assembly_path_ = breadthFirstZAssembly();
+    assembly_path_ = breadthFirstZAssembly();   //All parts in the path are in the target_assembly position
 
     if (assembly_path_.size() < 2)
     {
@@ -98,22 +98,61 @@ void Assembler::generateAssemblySequence()
 
     base_part_ = assembly_path_[1]->assembly_->getAssembledPartTransforms().begin()->first;  //Set base part
 
-    generateInitialPartPositions(); //Initial part positions are now set here
+    generateInitialPartPositions(); //Initial part positions are now set here   Sets inital_assembly positions
 
     generateGrasps();
 
     generateNegatives();
 
-    generateSlicerGcode();
+    generateSlicerGcode();  //Uses initial_assembly positions
 
-    alignTargetAssemblyToInitialAssembly();
+    alignAssemblyPathToInitialAssembly();
+
+    //alignTargetAssemblyToInitialAssembly();
 
 
 
-
+    debugState();
 
 
     generateCommandFile();
+}
+
+void Assembler::debugState()
+{
+    RCLCPP_INFO(logger(), "Base part ID: %ld", base_part_->getId());
+
+    RCLCPP_INFO(logger(), "INITIAL STATE");
+
+    for (auto const& [part, initial_transform] : initial_assembly_->getUnassembledPartTransforms())  //All parts in initial assembly are unassembled
+    {
+        RCLCPP_INFO(logger(), "Part Id: %ld Position: %f, %f, %f", part->getId(), initial_transform.X(), initial_transform.Y(), initial_transform.Z());
+    }
+
+    RCLCPP_INFO(logger(), "TARGET STATE");
+
+    for (auto const& [part, target_transform] : target_assembly_->getAssembledPartTransforms())  //All parts in target assembly are assembled
+    {
+        RCLCPP_INFO(logger(), "Part Id: %ld Position: %f, %f, %f", part->getId(), target_transform.X(), target_transform.Y(), target_transform.Z());
+    }
+
+    RCLCPP_INFO(logger(), "ASSEMBLY PATH");
+
+    for (std::shared_ptr<AssemblyNode> node : assembly_path_)
+    {
+        RCLCPP_INFO(logger(), "NODE");
+
+        for (auto const& [part, transform] : node->assembly_->getUnassembledPartTransforms())  
+        {
+            RCLCPP_INFO(logger(), "Unassembled part Id: %ld Position: %f, %f, %f", part->getId(), transform.X(), transform.Y(), transform.Z());
+        }
+
+        for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms()) 
+        {
+            RCLCPP_INFO(logger(), "Assembled part Id: %ld Position: %f, %f, %f", part->getId(), transform.X(), transform.Y(), transform.Z());
+        }
+    }
+
 }
 
 /*  Uses the grasps, part positions and path to generate the command file to be sent to ARMS
@@ -144,6 +183,10 @@ void Assembler::generateCommandFile()
         PPGGrasp ppg_grasp = part->getPPGGrasp();
 
         gp_Vec grasp_position = SumPoints(initial_transform, ppg_grasp.position_);
+
+        RCLCPP_INFO(logger(), "Pick pos: %f, %f, %f", pick_position.X(), pick_position.Y(), pick_position.Z());
+
+        RCLCPP_INFO(logger(), "Place pos: %f, %f, %f", place_position.X(), place_position.Y(), place_position.Z());
 
         YAML::Node designate_part_command;
         designate_part_command["command-type"] = "DESIGNATE_INTERNAL_PART";
@@ -305,24 +348,63 @@ void Assembler::generateInitialPartPositions()
     }
 }
 
-/*
-    Align the positions of the assembled parts in the target assembly to the position of the base part as given by the intial assembly
-*/
-void Assembler::alignTargetAssemblyToInitialAssembly()
+void Assembler::alignAssemblyPathToInitialAssembly()
 {
-    RCLCPP_INFO(logger(), "Aligning target assembly with initial assembly base part");
-    
+    RCLCPP_INFO(logger(), "Aligning assembly path with initial assembly base part");
+
     gp_Pnt target_base_part_pos = target_assembly_->getAssembledPartTransforms()[base_part_]; //TODO need to check this part exists
 
-    gp_Pnt initial_base_part_pos = assembly_path_[1]->assembly_->getAssembledPartTransforms()[base_part_];
+    gp_Pnt initial_base_part_pos = initial_assembly_->getUnassembledPartTransforms()[base_part_];
 
     gp_Vec delta(target_base_part_pos, initial_base_part_pos);
 
-    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms())  //All parts in target assembly are assembled
+    for (std::shared_ptr<AssemblyNode> node : assembly_path_)
     {
-        target_assembly_->setAssembledPart(part, transform.Translated(delta));
+        //Unassembled parts get set to initial positions
+        for (auto const& [part, transform] : node->assembly_->getUnassembledPartTransforms())  
+        {
+            node->assembly_->setUnassembledPart(part, initial_assembly_->getUnassembledPartTransforms()[part]);
+        }
+
+        for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms()) 
+        {
+            node->assembly_->setAssembledPart(part, transform.Translated(delta));
+        }
     }
 }
+
+// /*
+//     Align the positions of the assembled parts in the target assembly to the position of the base part as given by the intial assembly
+// */
+// void Assembler::alignTargetAssemblyToInitialAssembly()
+// {
+//     RCLCPP_INFO(logger(), "Aligning target assembly with initial assembly base part");
+    
+//     gp_Pnt target_base_part_pos = target_assembly_->getAssembledPartTransforms()[base_part_]; //TODO need to check this part exists
+
+//     gp_Pnt initial_base_part_pos = assembly_path_[1]->assembly_->getAssembledPartTransforms()[base_part_];
+
+//     RCLCPP_INFO(logger(), "Target base part pos: %f, %f, %f", target_base_part_pos.X(), target_base_part_pos.Y(), target_base_part_pos.Z());
+
+//     RCLCPP_INFO(logger(), "Initial base part pos: %f, %f, %f", initial_base_part_pos.X(), initial_base_part_pos.Y(), initial_base_part_pos.Z());
+
+//     gp_Vec delta(initial_base_part_pos, target_base_part_pos);
+
+//     RCLCPP_INFO(logger(), "Delta: %f, %f, %f", delta.X(), delta.Y(), delta.Z());
+
+//     for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms())  //All parts in target assembly are assemble
+//     {
+//         target_assembly_->setAssembledPart(part, transform.Translated(delta));
+//     }
+
+//     target_base_part_pos = target_assembly_->getAssembledPartTransforms()[base_part_]; //TODO need to check this part exists
+
+//     initial_base_part_pos = assembly_path_[1]->assembly_->getAssembledPartTransforms()[base_part_];
+
+//     RCLCPP_INFO(logger(), "Target base part pos: %f, %f, %f", target_base_part_pos.X(), target_base_part_pos.Y(), target_base_part_pos.Z());
+
+//     RCLCPP_INFO(logger(), "Initial base part pos: %f, %f, %f", initial_base_part_pos.X(), initial_base_part_pos.Y(), initial_base_part_pos.Z());
+// }
 
 
 

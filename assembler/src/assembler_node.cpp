@@ -169,9 +169,6 @@ private:
     "  physics NULL\n"
     "}\n";
 
-    RCLCPP_INFO_STREAM(this->get_logger(),
-        "Spawning part '" << name << "' via SpawnNodeFromString:\n" << vrml);
-
     using Service = webots_ros2_msgs::srv::SpawnNodeFromString;
 
     auto request = std::make_shared<webots_ros2_msgs::srv::SpawnNodeFromString::Request>();

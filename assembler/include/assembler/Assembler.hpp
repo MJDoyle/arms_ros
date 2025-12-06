@@ -51,9 +51,13 @@ private:
 
     void generateGrasps();
 
+    void debugState();
+
     bool arrangeInternalParts();
 
-    void alignTargetAssemblyToInitialAssembly();
+    //void alignTargetAssemblyToInitialAssembly();
+
+    void alignAssemblyPathToInitialAssembly();
 
     std::vector<std::shared_ptr<AssemblyNode>> breadthFirstZAssembly();
 
