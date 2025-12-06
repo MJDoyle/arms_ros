@@ -203,7 +203,7 @@ TopoDS_Shape SubtractShapeBFromA(TopoDS_Shape shape_A, TopoDS_Shape shape_B)
 
 void SaveShapeAsSTL(TopoDS_Shape shape, std::string filename)
 {
-    BRepMesh_IncrementalMesh(shape, 0.1);  // Mesh with a 0.1 tolerance
+    BRepMesh_IncrementalMesh(shape, 0.5, false, 0.1, true);  // Mesh with a 0.1 tolerance
 
     // Export the result to STL
     StlAPI_Writer writer;

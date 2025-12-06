@@ -8,6 +8,7 @@
 #include "assembler/Assembly.hpp"
 #include "assembler/ModelLoader.hpp"
 #include "assembler/WebotsSpawner.hpp"
+#include "assembler/Part.hpp"
 
 #include "assembler_msgs/action/process_model.hpp"
 
@@ -15,6 +16,7 @@
 #include <geometry_msgs/msg/vector3.hpp>
 #include <webots_ros2_msgs/srv/spawn_node_from_string.hpp>
 
+#include <sstream>
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -81,6 +83,17 @@ public:
   }
 
 private:
+
+  std::string sanitize(const std::string& in) {
+      std::string out = in;
+      for (char& c : out) {
+          if (!std::isalnum(c)) {
+              c = '_';   // replace spaces, :, -, ., etc.
+          }
+      }
+      return out;
+  }
+
   /**
    * @brief Spawn a test cube into assembly_parts for demonstration.
    */
@@ -98,61 +111,88 @@ private:
 
     std::array<double, 3> color = {1.0, 0.0, 0.0};  // red
     
-    spawn_cube("test_cube", pos, size, color);
+    //spawn_cube("test_cube", pos, size, color);
   }
 
-  /**
-   * @brief Spawn a cube into the assembly_parts group.
-   * 
-   * @param name Unique name for the cube (e.g., "part_001")
-   * @param position Position in world coordinates
-   * @param size Cube dimensions
-   * @param color RGB color (0-1 range)
-   */
-  void spawn_cube(
-    const std::string& name,
-    const geometry_msgs::msg::Point& position,
-    const geometry_msgs::msg::Vector3& size,
-    const std::array<double, 3>& color) {
+  void webots_spawn_initial_assembly(std::shared_ptr<Assembly> assembly)
+  {
+    std::map<std::shared_ptr<Part>, gp_Pnt> unassembled_part_transforms = assembly->getUnassembledPartTransforms();
 
-  if (!supervisor_available_) {
-    RCLCPP_WARN(this->get_logger(),
-                "Supervisor service not available, cannot spawn cube");
-    return;
-  }
+    int i = 0;
 
-  // Generate VRML code for the cube
-  std::string vrml = WebotsSpawner::generateCubeVRML(name, position, size, color);
+    for (auto const& [part, position] : unassembled_part_transforms)
+    {
+        webots_spawn_part(part, i);
 
-  RCLCPP_INFO_STREAM(this->get_logger(),
-      "Spawning cube '" << name << "' via SpawnNodeFromString:\n" << vrml);
-
-  using Service = webots_ros2_msgs::srv::SpawnNodeFromString;
-
-  auto request = std::make_shared<webots_ros2_msgs::srv::SpawnNodeFromString::Request>();
-  request->data = vrml;   // the ONLY field in the request
-
-  RCLCPP_INFO_STREAM(this->get_logger(),
-            "A");
-
-  // Async call – callback gets only a future<Response>
-  supervisor_spawn_client_->async_send_request(
-    request,
-    [this, name](rclcpp::Client<Service>::SharedFuture future) {
-      auto result = future.get();
-      if (result->success) {
-        RCLCPP_INFO_STREAM(this->get_logger(),
-            "Successfully spawned cube '" << name << "'");
-      } else {
-        RCLCPP_ERROR_STREAM(this->get_logger(),
-            "Failed to spawn cube '" << name << "'");
-      }
+        i ++;
     }
-  );
+  }
 
-  RCLCPP_INFO_STREAM(this->get_logger(),
-            "B");
-}
+
+  void webots_spawn_part(const std::shared_ptr<Part> part, int index) 
+  {
+    // if (!supervisor_available_) {
+    //   RCLCPP_WARN(this->get_logger(),
+    //               "Supervisor service not available, cannot spawn cube");
+    //   return;
+    // }
+
+    std::stringstream ss;
+
+    ss << "/tmp/part_" << index << ".stl";
+
+    part->saveShape(ss.str());
+
+    std::string name = part->getName();
+
+    std::string vrml =
+    "DEF " + sanitize(name) + std::to_string(index) + " Solid {\n"
+    "  name \"" + sanitize(name) + std::to_string(index) + "\"\n"
+    "  translation 0 0 0.05\n"
+    "  children [\n"
+    "    Transform {\n"
+    "      scale 0.001 0.001 0.001\n"
+    "      children [\n"
+    "        Shape {\n"
+    "          castShadows FALSE\n"
+    "          appearance PBRAppearance {\n"
+    "            baseColor 0.2 0.6 0.8\n"
+    "          }\n"
+    "          geometry Mesh {\n"
+    "            url \"part_" + std::to_string(index) + ".stl\"\n"        
+    "          }\n"
+    "        }\n"
+    "      ]\n"
+    "    }\n"
+    "  ]\n"
+    "  boundingObject NULL\n"
+    "  physics NULL\n"
+    "}\n";
+
+    RCLCPP_INFO_STREAM(this->get_logger(),
+        "Spawning part '" << name << "' via SpawnNodeFromString:\n" << vrml);
+
+    using Service = webots_ros2_msgs::srv::SpawnNodeFromString;
+
+    auto request = std::make_shared<webots_ros2_msgs::srv::SpawnNodeFromString::Request>();
+    request->data = vrml;   // the ONLY field in the request
+
+    // Async call – callback gets only a future<Response>
+    supervisor_spawn_client_->async_send_request(
+      request,
+      [this, name](rclcpp::Client<Service>::SharedFuture future) {
+        auto result = future.get();
+        if (result->success) {
+          RCLCPP_INFO_STREAM(this->get_logger(),
+              "Successfully spawned part '" << name << "'");
+        } else {
+          RCLCPP_ERROR_STREAM(this->get_logger(),
+              "Failed to spawn part '" << name << "'");
+        }
+      }
+    );
+
+  }
 
   void process_model_execute(
       const std::shared_ptr<
@@ -170,6 +210,8 @@ private:
     assembler_->setTargetAssembly(target_assembly);
 
     assembler_->generateAssemblySequence();
+
+    webots_spawn_initial_assembly(assembler_->getInitialAssembly());
 
     goal_handle->succeed(result);
 

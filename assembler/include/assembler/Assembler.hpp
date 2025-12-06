@@ -25,6 +25,8 @@ public:
 
     void setTargetAssembly(std::shared_ptr<Assembly> target_assembly) { target_assembly_ = target_assembly; }
 
+    std::shared_ptr<Assembly> getInitialAssembly() { return initial_assembly_; }
+
 private:
 
     void initialisePartBays();
