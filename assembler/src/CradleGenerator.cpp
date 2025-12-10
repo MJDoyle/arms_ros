@@ -4,6 +4,221 @@
 
 #include "assembler/Logger.hpp"
 
+#include "assembler/quickhull/QuickHull.hpp"
+
+struct HullMesh
+{
+  std::vector<gp_Pnt>    vertices;
+  std::vector<uint32_t>  indices;  // 3 per triangle, 0-based
+};
+
+
+// Collect 3D points from a TopoDS_Shape
+static void CollectPointsFromShape(const TopoDS_Shape& shape,
+                                   std::vector<gp_Pnt>& outPoints,
+                                   double deflection = 0.1)
+{
+  // Triangulate (if not already)
+  BRepMesh_IncrementalMesh mesher(shape, deflection);
+
+  TopExp_Explorer ex(shape, TopAbs_FACE);
+  for (; ex.More(); ex.Next())
+  {
+    const TopoDS_Face& F = TopoDS::Face(ex.Current());
+    TopLoc_Location loc;
+    Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(F, loc);
+    if (tri.IsNull())
+      continue;
+
+    const gp_Trsf& T = loc.Transformation();
+
+    const int nbNodes = tri->NbNodes();
+
+    for (int i = 1; i <= nbNodes; ++i)
+    {
+        // Works on all versions because:
+        // - In ≥7.5: Node(i) is an inline wrapper around Nodes()(i)
+        // - In ≤7.4: Node(i) is the only API
+        gp_Pnt p = tri->Node(i);
+
+        if (!loc.IsIdentity())
+            p.Transform(T);
+
+        outPoints.push_back(p);
+    }
+  }
+}
+
+// Build convex hull triangle mesh from OCCT shape
+static HullMesh BuildConvexHullMesh(const TopoDS_Shape& shape,
+                                    double deflection = 0.1)
+{
+  std::vector<gp_Pnt> pts;
+  CollectPointsFromShape(shape, pts, deflection);
+
+  HullMesh out;
+  if (pts.size() < 4)
+    return out; // too few points for a 3D hull
+
+  // Fill QuickHull point cloud
+  std::vector<quickhull::Vector3<double>> cloud;
+  cloud.reserve(pts.size());
+  for (const gp_Pnt& p : pts)
+    cloud.emplace_back(p.X(), p.Y(), p.Z());
+
+  quickhull::QuickHull<double> qh;
+
+  // CCW = true; useOriginalIndices = false (we get a compact vertex buffer)
+  auto hull = qh.getConvexHull(cloud, /*CCW*/ true, /*useOriginalIndices*/ false);
+
+  auto& vbuf = hull.getVertexBuffer(); // behaves like array of Vector3<double>
+  auto& ibuf = hull.getIndexBuffer();  // std::vector<IndexType>
+
+  out.vertices.reserve(vbuf.size());
+  for (size_t i = 0; i < vbuf.size(); ++i)
+  {
+    const auto& v = vbuf[i];
+    out.vertices.emplace_back(v.x, v.y, v.z);
+  }
+
+  out.indices.assign(ibuf.begin(), ibuf.end());
+  return out;
+}
+
+// Build an OCCT shape representing the convex hull surface
+TopoDS_Shape MakeConvexHullShape(const TopoDS_Shape& input,
+                                 double deflection = 0.1)
+{
+  HullMesh mesh = BuildConvexHullMesh(input, deflection);
+  if (mesh.vertices.empty() || mesh.indices.size() < 3)
+    return TopoDS_Shape(); // null
+
+  const Standard_Integer nbNodes = static_cast<Standard_Integer>(mesh.vertices.size());
+  const Standard_Integer nbTris  = static_cast<Standard_Integer>(mesh.indices.size() / 3);
+
+  // Fill OCCT arrays (1-based indexing!)
+  TColgp_Array1OfPnt nodes(1, nbNodes);
+  for (Standard_Integer i = 1; i <= nbNodes; ++i)
+    nodes.SetValue(i, mesh.vertices[static_cast<size_t>(i - 1)]);
+
+  Poly_Array1OfTriangle triangles(1, nbTris);
+  for (Standard_Integer t = 1; t <= nbTris; ++t)
+  {
+    const uint32_t i0 = mesh.indices[3 * (t - 1) + 0];
+    const uint32_t i1 = mesh.indices[3 * (t - 1) + 1];
+    const uint32_t i2 = mesh.indices[3 * (t - 1) + 2];
+
+    // QuickHull indices are 0-based → Poly_Triangle expects 1-based indices
+    triangles.SetValue(t, Poly_Triangle(
+        static_cast<Standard_Integer>(i0 + 1),
+        static_cast<Standard_Integer>(i1 + 1),
+        static_cast<Standard_Integer>(i2 + 1)));
+  }
+
+  Handle(Poly_Triangulation) tri =
+      new Poly_Triangulation(nodes, Poly_Array1OfTriangle(triangles));
+
+  // Wrap into a face and a shell
+  BRep_Builder BB;
+  TopoDS_Face hullFace;
+  BB.MakeFace(hullFace, tri);      // face defined only by triangulation :contentReference[oaicite:4]{index=4}
+
+  TopoDS_Shell shell;
+  BB.MakeShell(shell);
+  BB.Add(shell, hullFace);
+
+  // Optionally: make a solid; many apps are fine just displaying the shell
+  TopoDS_Solid solid;
+  BB.MakeSolid(solid);
+  BB.Add(solid, shell);
+
+  return solid; // or `shell` if you only want the surface
+}
+
+void CradleGenerator::createSimpleNegative()
+{
+
+    double clearance = 2.0;
+
+
+
+    gp_Pnt shape_position = ShapeCentroid(shape_);
+
+    TopoDS_Shape jigBlock = BRepPrimAPI_MakeBox(shape_position, 60, 60, 40);
+
+    jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), shape_position.Z()));
+
+    //Create an offset version of the shape for some clearance
+    BRepOffsetAPI_MakeOffset offsetMaker(shape_, clearance, 1.0e-3, BRepOffset_Skin, Standard_True);
+
+    offsetMaker.Build();
+
+    TopoDS_Shape inflated_shape =offsetMaker.Shape();
+
+    //Make the inflated shape convex
+    TopoDS_Shape convex_shape = MakeConvexHullShape(inflated_shape);
+
+    TopoDS_Shape final_jig = jigBlock;
+
+    //Step the jig through the shape until no downwards faces are present
+
+    for (float z = ShapeLowestPoint(shape_) - 21; z < ShapeLowestPoint(shape_); z += 1)
+    {
+          RCLCPP_INFO(logger(), "Iterating");
+
+          jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), z));
+
+          BRepAlgoAPI_Cut cutter(jigBlock, shape_);
+          TopoDS_Shape jig = cutter.Shape();
+
+          int num_downwards_faces = 0;
+
+         for (TopExp_Explorer exp(jig, TopAbs_FACE); exp.More(); exp.Next())
+         {
+             TopoDS_Face face = TopoDS::Face(exp.Current());
+
+             gp_Dir normal = outwardFaceNormal(face);
+
+             //Ignore faces that are not planar
+             if (!BRep_Tool::Surface(face)->IsKind(STANDARD_TYPE(Geom_Plane)))   //TODO how do we handle curved faces?
+             {
+                 //RCLCPP_INFO(logger(), "Non planar face");
+
+                 continue;
+             }
+
+             //Ignore faces that don't point downwards
+             if (normal.Angle(UPWARDS) <= M_PI * 0.5001)
+                 continue;
+
+             RCLCPP_INFO(logger(), "Normal angle: %f", normal.Angle(UPWARDS));
+
+             num_downwards_faces ++;
+
+             //RCLCPP_INFO(logger(), "Downwards face");
+         }
+
+         RCLCPP_INFO(logger(), "Downwards faces: %d", num_downwards_faces);
+
+         if (num_downwards_faces > 1)
+             break;
+
+         final_jig = jig;
+
+
+    }
+
+    BRepMesh_IncrementalMesh mesher(final_jig, 0.1);
+
+    StlAPI_Writer writer;
+
+    std::stringstream ss;
+
+    ss << WORKING_DIR << name_ << "_jig.stl";
+
+    writer.Write(final_jig, ss.str().c_str());
+
+}
 
 void CradleGenerator::createNegative()
 {

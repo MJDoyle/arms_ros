@@ -827,7 +827,7 @@ void Assembler::generateNegatives()
 
         CradleGenerator cradle_gen(part->getName(), *part->getShape());
 
-        cradle_gen.createNegative();
+        cradle_gen.createSimpleNegative();
     }
 }
 

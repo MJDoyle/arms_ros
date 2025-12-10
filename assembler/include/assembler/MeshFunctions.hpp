@@ -126,7 +126,13 @@
 
 #include <BOPAlgo_BOP.hxx>
 
+#include <BRepProj_Projection.hxx>
+
 #include <fstream>
+
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepOffsetAPI_MakeOffset.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
 
 extern const gp_Dir UPWARDS;
 

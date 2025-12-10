@@ -29,7 +29,8 @@ add_compile_options(-Wno-deprecated-declarations) #supress OCCT iterator depreca
 #include_directories((${ASSIMP_INCLUDE_DIR}))
 
 add_library(assembler_node SHARED
-  src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/CradleGenerator.cpp src/PPGGraspGenerator.cpp src/VacuumGraspGenerator.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp src/Config.cpp)
+  src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/CradleGenerator.cpp src/PPGGraspGenerator.cpp src/VacuumGraspGenerator.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp src/Config.cpp
+  include/assembler/quickhull/QuickHull.cpp)
 
 target_include_directories(assembler_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -62,82 +62,6 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
         RCLCPP_INFO(logger(), "Checking face of area %f and highest point %f", faceArea(face), face_highest_point);
 
-        // gp_Ax3 ax3 = plane.Position();
-
-        // gp_Dir X = ax3.XDirection();
-        // gp_Dir Y = ax3.YDirection();
-
-        // double w = 50;   // physical width of full grid TODO make this correspond to face/plane size
-        // int N = 25;
-
-        // double half = w * 0.5;
-        // double step = w / (N - 1);
-
-        // std::vector<gp_Pnt> grid;
-
-        // for (int i = 0; i < N; ++i)
-        // {
-        //     double dx = -half + i * step;
-
-        //     for (int j = 0; j < N; ++j)
-        //     {
-        //         double dy = -half + j * step;
-
-        //         gp_Pnt P = face_centroid
-        //                 .Translated(gp_Vec(X) * dx)
-        //                 .Translated(gp_Vec(Y) * dy);
-
-        //         double nozzle_x = P.X();
-        //         double nozzle_y = P.Y();
-        //         double nozzle_z = face_highest_point + 0.5 * nozzle_height;
-        //         double nozzle_tip_z = face_highest_point - 0.5 * nozzle_tip_height;
-
-        //         nozzle = ShapeSetCentroid(nozzle, gp_Pnt(nozzle_x, nozzle_y, nozzle_z));
-
-        //         nozzle_tip = ShapeSetCentroid(nozzle_tip, gp_Pnt(nozzle_x, nozzle_y, nozzle_tip_z));
-
-        //         //Intersect the nozzle and the part
-        //         TopoDS_Shape nozzle_intersection = ShapeIntersection(nozzle, shape);
-
-        //         double nozzle_intersection_ratio = 0;
-
-        //         if (!nozzle_intersection.IsNull())
-        //         {
-        //             nozzle_intersection_ratio = ShapeVolume(nozzle_intersection) / nozzle_volume;
-
-        //             //Nozzle clashes
-        //             if (nozzle_intersection_ratio > 0.01)
-        //                 continue;
-        //         }
-
-        //         //Intersect the nozzle tip and the part
-        //         TopoDS_Shape nozzle_tip_intersection = ShapeIntersection(nozzle_tip, shape);
-
-        //         if (nozzle_tip_intersection.IsNull())
-        //             continue;
-
-        //         double nozzle_tip_intersection_ratio = ShapeVolume(nozzle_tip_intersection) / nozzle_tip_volume;
-
-        //         if (nozzle_tip_intersection_ratio < 0.5)
-        //             continue;
-
-        //         gp_Vec com_delta = gp_Vec(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), 0);
-
-        //         CandidateGrasp grasp;
-
-        //         grasp.com_distance = com_delta.Magnitude();
-
-        //         grasp.position = gp_Pnt(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), nozzle_z - shape_com.Z());
-
-        //         grasp.nozzle_intersection = nozzle_intersection_ratio;
-
-        //         grasp.tip_intersection = nozzle_tip_intersection_ratio;
-
-        //         candidate_grasps.push_back(grasp);
-                        
-        //     }
-        // }
-
         double nozzle_z = face_highest_point + 0.5 * nozzle_height;
         double nozzle_tip_z = face_highest_point - 0.5 * nozzle_tip_height;
 
@@ -149,7 +73,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
             for (int th = 0; th < 360; th += 90)
             {
                 double nozzle_x = face_centroid.X() + r * cos(th * M_PI / 180);
-                double nozzle_y = face_centroid.Y() + r * cos(th * M_PI / 180);                
+                double nozzle_y = face_centroid.Y() + r * sin(th * M_PI / 180);                
 
                 nozzle = ShapeSetCentroid(nozzle, gp_Pnt(nozzle_x, nozzle_y, nozzle_z));
 

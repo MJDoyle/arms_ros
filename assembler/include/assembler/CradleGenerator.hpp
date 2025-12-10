@@ -3,11 +3,17 @@
 
 #include "assembler/MeshFunctions.hpp"
 
+struct Pt2 {
+    double x, y;
+};
+
 class CradleGenerator
 {
     public:
 
     CradleGenerator(std::string name, TopoDS_Shape shape) : shape_(shape), name_(name) {}
+
+    void createSimpleNegative();
 
     void createNegative();
 
@@ -20,12 +26,10 @@ class CradleGenerator
     TopoDS_Shape createBoxWithPose(double width, double height, double length, gp_Pnt target_center, gp_Dir target_direction);
 
     private:
-    
-        TopoDS_Shape shape_;
 
-        std::string name_;
+    TopoDS_Shape shape_;
 
-
+    std::string name_;
 };
 
 
