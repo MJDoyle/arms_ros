@@ -6,6 +6,191 @@
 
 #include "assembler/quickhull/QuickHull.hpp"
 
+#include "assembler/ARMSConfig.hpp"
+
+TopoDS_Shape makeConvexHullSolid(const std::vector<gp_Pnt>& verts,
+    const std::vector<uint32_t>& indices)
+{
+if (verts.empty() || indices.empty() || indices.size() % 3 != 0) {
+std::cerr << "ERROR: Invalid hull mesh" << std::endl;
+return TopoDS_Shape();
+}
+
+// Sewing to assemble faces into a watertight shell
+BRepBuilderAPI_Sewing sewing(1.0e-6);
+
+for (size_t t = 0; t < indices.size(); t += 3)
+{
+gp_Pnt p0 = verts[indices[t]];
+gp_Pnt p1 = verts[indices[t+1]];
+gp_Pnt p2 = verts[indices[t+2]];
+
+// Create 3 edges
+TopoDS_Edge e0 = BRepBuilderAPI_MakeEdge(p0, p1);
+TopoDS_Edge e1 = BRepBuilderAPI_MakeEdge(p1, p2);
+TopoDS_Edge e2 = BRepBuilderAPI_MakeEdge(p2, p0);
+
+// Form a wire
+BRepBuilderAPI_MakeWire mkWire;
+mkWire.Add(e0);
+mkWire.Add(e1);
+mkWire.Add(e2);
+TopoDS_Wire wire = mkWire.Wire();
+
+// Build planar face
+TopoDS_Face face = BRepBuilderAPI_MakeFace(wire);
+
+// Add to sewing
+sewing.Add(face);
+}
+
+// Sew faces
+sewing.Perform();
+TopoDS_Shape stitched = sewing.SewedShape();
+
+// Extract stitched shell
+TopoDS_Shell shell;
+TopExp_Explorer ex(stitched, TopAbs_SHELL);
+if (ex.More()) {
+shell = TopoDS::Shell(ex.Current());
+} else {
+std::cerr << "ERROR: No shell produced by sewing!" << std::endl;
+return TopoDS_Shape();
+}
+
+// Build solid
+BRepBuilderAPI_MakeSolid mkSolid(shell);
+TopoDS_Shape solid = mkSolid.Shape();
+
+// Validate
+BRepCheck_Analyzer ana(solid);
+if (!ana.IsValid())
+std::cerr << "WARNING: Hull solid is not perfectly valid" << std::endl;
+
+return solid;
+}
+
+
+
+TopoDS_Shape makeSolidFromHull(const std::vector<gp_Pnt>& verts,
+    const std::vector<uint32_t>& indices)
+{
+    if (indices.size() % 3 != 0 || verts.empty()) {
+    std::cerr << "Hull mesh is invalid\n";
+    return TopoDS_Shape();
+    }
+
+    Standard_Integer nbTriangles = indices.size() / 3;
+
+    // Sewing collects faces and merges edges
+    BRepBuilderAPI_Sewing sewing(1.0e-6, Standard_True, Standard_True, Standard_True, Standard_False);
+
+    for (Standard_Integer t = 0; t < nbTriangles; ++t)
+    {
+    uint32_t i0 = indices[3 * t + 0];
+    uint32_t i1 = indices[3 * t + 1];
+    uint32_t i2 = indices[3 * t + 2];
+
+    if (i0 >= verts.size() || i1 >= verts.size() || i2 >= verts.size())
+    continue;
+
+    gp_Pnt p0 = verts[i0];
+    gp_Pnt p1 = verts[i1];
+    gp_Pnt p2 = verts[i2];
+
+    // Build 3 edges
+    TopoDS_Edge e0 = BRepBuilderAPI_MakeEdge(p0, p1);
+    TopoDS_Edge e1 = BRepBuilderAPI_MakeEdge(p1, p2);
+    TopoDS_Edge e2 = BRepBuilderAPI_MakeEdge(p2, p0);
+
+    // Build a wire
+    BRepBuilderAPI_MakeWire mkWire;
+    mkWire.Add(e0);
+    mkWire.Add(e1);
+    mkWire.Add(e2);
+    TopoDS_Wire wire = mkWire.Wire();
+
+    // Build a face from the wire
+    TopoDS_Face face = BRepBuilderAPI_MakeFace(wire);
+
+    // Add face to sewing
+    sewing.Add(face);
+    }
+
+    // Sew all faces into a shell
+    sewing.Perform();
+    TopoDS_Shape sewed = sewing.SewedShape();
+
+    // Expect a shell
+    TopoDS_Shell shell;
+    if (sewed.ShapeType() == TopAbs_SHELL) {
+    shell = TopoDS::Shell(sewed);
+    } else {
+    // Attempt to extract shell
+    TopExp_Explorer ex;
+    for (ex.Init(sewed, TopAbs_SHELL); ex.More(); ex.Next()) {
+    shell = TopoDS::Shell(ex.Current());
+    break;
+    }
+    }
+
+    if (shell.IsNull()) {
+    std::cerr << "ERROR: Failed to create shell from hull faces.\n";
+    return TopoDS_Shape();
+    }
+
+    // Build a solid from the closed shell
+    BRepBuilderAPI_MakeSolid mkSolid(shell);
+    TopoDS_Shape solid = mkSolid.Shape();
+
+    // Validate
+    BRepCheck_Analyzer ana(solid);
+    if (!ana.IsValid()) {
+    std::cerr << "WARNING: Solid from hull is not valid.\n";
+    // Still return it; often usable anyway
+    }
+
+    return solid;
+}
+
+TopoDS_Shape safeCut(const TopoDS_Shape& A, const TopoDS_Shape& B)
+{
+    // Quick sanity check
+    BRepCheck_Analyzer anaA(A);
+    BRepCheck_Analyzer anaB(B);
+    if (!anaA.IsValid()) {
+        std::cerr << "Shape A is invalid before boolean\n";
+    }
+    if (!anaB.IsValid()) {
+        std::cerr << "Shape B is invalid before boolean\n";
+    }
+
+    try
+    {
+        BRepAlgoAPI_Cut cut(A, B);
+        cut.Build();
+
+        if (!cut.IsDone()) {
+            std::cerr << "Cut failed: not done\n";
+            return TopoDS_Shape();
+        }
+
+        TopoDS_Shape res = cut.Shape();
+
+        BRepCheck_Analyzer anaRes(res);
+        if (!anaRes.IsValid()) {
+            std::cerr << "Resulting shape is invalid\n";
+        }
+
+        return res;
+    }
+    catch (Standard_Failure& e)
+    {
+        std::cerr << "Boolean exception: " << e.GetMessageString() << "\n";
+        return TopoDS_Shape();
+    }
+}
+
 struct HullMesh
 {
   std::vector<gp_Pnt>    vertices;
@@ -135,7 +320,7 @@ TopoDS_Shape MakeConvexHullShape(const TopoDS_Shape& input,
   return solid; // or `shell` if you only want the surface
 }
 
-void CradleGenerator::createSimpleNegative()
+float CradleGenerator::createSimpleNegative(float bay_size)
 {
 
     double clearance = 2.0;
@@ -144,66 +329,116 @@ void CradleGenerator::createSimpleNegative()
 
     gp_Pnt shape_position = ShapeCentroid(shape_);
 
-    TopoDS_Shape jigBlock = BRepPrimAPI_MakeBox(shape_position, 60, 60, 40);
+    TopoDS_Shape jigBlock = BRepPrimAPI_MakeBox(shape_position, bay_size, bay_size, JIG_HEIGHT);
 
     jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), shape_position.Z()));
 
-    //Create an offset version of the shape for some clearance
-    BRepOffsetAPI_MakeOffset offsetMaker(shape_, clearance, 1.0e-3, BRepOffset_Skin, Standard_True);
+    //Create a scaled version of the shape for some clearance
+    TopoDS_Shape scaled_shape = UniformScaleShape(shape_, 1.03);    //TODO get scaling value from shape size
 
-    offsetMaker.Build();
-
-    TopoDS_Shape inflated_shape =offsetMaker.Shape();
+    HullMesh hull = BuildConvexHullMesh(scaled_shape);
 
     //Make the inflated shape convex
-    TopoDS_Shape convex_shape = MakeConvexHullShape(inflated_shape);
+    //TopoDS_Shape convex_shape = makeSolidFromHull(hull.vertices, hull.indices);
+
+
+    TopoDS_Shape convex_shape = makeConvexHullSolid(hull.vertices, hull.indices);
+
+    Handle(ShapeFix_Shape) aFixShape = new ShapeFix_Shape();
+    aFixShape->Init (convex_shape);
+
+    aFixShape->Perform();
+
+    convex_shape = aFixShape->Shape();
 
     TopoDS_Shape final_jig = jigBlock;
 
+    BRepMesh_IncrementalMesh mesher2(convex_shape, 0.1);
+
+    StlAPI_Writer writer2;
+
+    std::stringstream ss2;
+
+    ss2 << WORKING_DIR << name_ << "_convex_scaled_shape.stl";
+
+    writer2.Write(convex_shape, ss2.str().c_str());
+
+    BRepMesh_IncrementalMesh mesher3(shape_, 0.1);
+
+    StlAPI_Writer writer3;
+
+    std::stringstream ss3;
+
+    ss3 << WORKING_DIR << name_ << "_shape.stl";
+
+    writer3.Write(shape_, ss3.str().c_str());
+
     //Step the jig through the shape until no downwards faces are present
 
-    for (float z = ShapeLowestPoint(shape_) - 21; z < ShapeLowestPoint(shape_); z += 1)
+    int i = -1;
+
+    float jig_part_z_offset = 0;
+
+    for (float z = ShapeLowestPoint(shape_) - (JIG_HEIGHT * 0.5 + 1); z < ShapeLowestPoint(shape_); z += 1)
     {
-          RCLCPP_INFO(logger(), "Iterating");
+        i ++;
 
-          jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), z));
+        RCLCPP_INFO(logger(), "Iterating");
 
-          BRepAlgoAPI_Cut cutter(jigBlock, shape_);
-          TopoDS_Shape jig = cutter.Shape();
+        jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), z));
 
-          int num_downwards_faces = 0;
+        //TopoDS_Shape jig = safeCut(jigBlock, convex_shape);
 
-         for (TopExp_Explorer exp(jig, TopAbs_FACE); exp.More(); exp.Next())
-         {
-             TopoDS_Face face = TopoDS::Face(exp.Current());
+        BRepAlgoAPI_Cut cutter(jigBlock, convex_shape);
+        TopoDS_Shape jig = cutter.Shape();
 
-             gp_Dir normal = outwardFaceNormal(face);
+        RCLCPP_INFO(logger(), "Iterating2");
 
-             //Ignore faces that are not planar
-             if (!BRep_Tool::Surface(face)->IsKind(STANDARD_TYPE(Geom_Plane)))   //TODO how do we handle curved faces?
-             {
-                 //RCLCPP_INFO(logger(), "Non planar face");
+        BRepMesh_IncrementalMesh mesher(jig, 0.1);
 
-                 continue;
-             }
+        StlAPI_Writer writer;
 
-             //Ignore faces that don't point downwards
-             if (normal.Angle(UPWARDS) <= M_PI * 0.5001)
-                 continue;
+        std::stringstream ss;
 
-             RCLCPP_INFO(logger(), "Normal angle: %f", normal.Angle(UPWARDS));
+        ss << WORKING_DIR << name_ << "_partial_jig_" << i << ".stl";
 
-             num_downwards_faces ++;
+        writer.Write(jig, ss.str().c_str());
 
-             //RCLCPP_INFO(logger(), "Downwards face");
-         }
+        int num_downwards_faces = 0;
 
-         RCLCPP_INFO(logger(), "Downwards faces: %d", num_downwards_faces);
+        for (TopExp_Explorer exp(jig, TopAbs_FACE); exp.More(); exp.Next())
+        {
+            TopoDS_Face face = TopoDS::Face(exp.Current());
 
-         if (num_downwards_faces > 1)
-             break;
+            gp_Dir normal = outwardFaceNormal(face);
 
-         final_jig = jig;
+            //Ignore faces that are not planar
+            if (!BRep_Tool::Surface(face)->IsKind(STANDARD_TYPE(Geom_Plane)))   //TODO how do we handle curved faces?
+            {
+                //RCLCPP_INFO(logger(), "Non planar face");
+
+                continue;
+            }
+
+            //Ignore faces that don't point downwards
+            if (normal.Angle(UPWARDS) <= M_PI * 0.5001)
+                continue;
+
+            RCLCPP_INFO(logger(), "Normal angle: %f", normal.Angle(UPWARDS));
+
+            num_downwards_faces ++;
+
+            //RCLCPP_INFO(logger(), "Downwards face");
+        }
+
+        RCLCPP_INFO(logger(), "Downwards faces: %d", num_downwards_faces);
+
+        if (num_downwards_faces > 1)
+            break;
+
+        jig_part_z_offset = ShapeCentroid(shape_).Z() - ShapeCentroid(jig).Z();
+
+        final_jig = jig;
 
 
     }
@@ -217,6 +452,9 @@ void CradleGenerator::createSimpleNegative()
     ss << WORKING_DIR << name_ << "_jig.stl";
 
     writer.Write(final_jig, ss.str().c_str());
+
+
+    return jig_part_z_offset;
 
 }
 

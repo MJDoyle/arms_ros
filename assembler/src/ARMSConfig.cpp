@@ -28,3 +28,7 @@ const double PRINT_MIN_SPACING = 20;
 
 const double PRINT_BED_HEIGHT = 0;
 
+const double JIG_HEIGHT = 10;
+
+const double JIG_CENTER_Z = 5;
+

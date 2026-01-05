@@ -47,40 +47,40 @@ bool Part::collide(std::shared_ptr<Part> otherPart)
 gp_Pnt Part::generateBayPosition(std::vector<std::vector<bool>>& occupancy)
 {
     double substrate_depth = 6;   
-    int bay_size_index = 0;
-    int bay_index = -1;                                 //The bay index for a given size
+    bay_size_index_ = 0;
+    bay_index_ = -1;                                 //The bay index for a given size
     Standard_Real x_size = ShapeAxisSize(*shape_, 0);
     Standard_Real y_size = ShapeAxisSize(*shape_, 1);
 
     //Select correct bay size depending on size of part
     if (x_size > 38 || y_size > 38)
     {
-        bay_size_index = 1;
+        bay_size_index_ = 1;
     }
 
     //Find a free, appropriately sized bay
-    for (int i = 0; i < occupancy[bay_size_index].size(); i ++)
+    for (int i = 0; i < occupancy[bay_size_index_].size(); i ++)
     {
-        if (occupancy[bay_size_index][i] == false)
+        if (occupancy[bay_size_index_][i] == false)
         {
-            bay_index = i;
+            bay_index_ = i;
             break;
         }
     }
 
-    if (bay_index == -1)
+    if (bay_index_ == -1)
     {
         RCLCPP_FATAL(logger(), "No free bay can be found");
         rclcpp::shutdown();
         return gp_Pnt(0, 0, 0);
     }
 
-    occupancy[bay_size_index][bay_index] = true;
+    occupancy[bay_size_index_][bay_index_] = true;
 
     //Return the position the shape in the parts bay - base of the shape should be at -1 mm - TODO this needs to be calibrated
     
-    return gp_Pnt(PARTS_BAY_POSITIONS[bay_size_index][bay_index].X(),
-                                               PARTS_BAY_POSITIONS[bay_size_index][bay_index].X(),
+    return gp_Pnt(PARTS_BAY_POSITIONS[bay_size_index_][bay_index_].X(),
+                                               PARTS_BAY_POSITIONS[bay_size_index_][bay_index_].X(),
                                                ShapeAxisSize(*shape_, 2) / 2 - 1);
 
 }

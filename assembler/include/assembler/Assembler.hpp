@@ -35,7 +35,9 @@ private:
 
     void generateInitialPartPositions();
 
-    void generateCommandFile();
+    void generateGCodeFile(std::vector<size_t> part_addition_order);
+
+    void generateCommandFile(std::vector<size_t> part_addition_order);
 
     std::vector<size_t> generatePartAdditionOrder();
 

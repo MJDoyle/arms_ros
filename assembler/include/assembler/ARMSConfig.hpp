@@ -19,4 +19,8 @@ const extern double PRINT_MIN_SPACING;
 
 const extern double PRINT_BED_HEIGHT;
 
+const extern double JIG_HEIGHT;
+
+const extern double JIG_CENTER_Z;
+
 #endif

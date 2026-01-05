@@ -134,6 +134,11 @@
 #include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+
 extern const gp_Dir UPWARDS;
 
 TopoDS_Shape ShapeIntersection(TopoDS_Shape shape_A, TopoDS_Shape shape_B);

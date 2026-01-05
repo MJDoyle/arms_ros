@@ -48,6 +48,8 @@ public:
     std::string                     getName()               { return name_; }
     std::shared_ptr<TopoDS_Shape>   getShape()              { return shape_; }
 
+    int                             getBaySizeIndex()       { return bay_size_index_; }
+
 private:
 
     //TopoDS_Shape GenerateGripperPlate(gp_Dir normal, gp_Pnt center);
@@ -63,6 +65,10 @@ private:
     size_t id_;
 
     std::string name_;
+
+    int bay_index_;
+
+    int bay_size_index_;
 };
 
 #endif

@@ -13,7 +13,7 @@ class CradleGenerator
 
     CradleGenerator(std::string name, TopoDS_Shape shape) : shape_(shape), name_(name) {}
 
-    void createSimpleNegative();
+    float createSimpleNegative(float bay_size);
 
     void createNegative();
 

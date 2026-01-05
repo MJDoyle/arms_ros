@@ -28,6 +28,8 @@
 
 #include "assembler/PPGGraspGenerator.hpp"
 
+#include "assembler/GCodeGenerator.hpp"
+
 Assembler::Assembler()
 {  
     initialisePartBays();
@@ -115,7 +117,11 @@ void Assembler::generateAssemblySequence()
     debugState();
 
 
-    generateCommandFile();
+    std::vector<size_t> part_addition_order = generatePartAdditionOrder();
+
+    generateGCodeFile(part_addition_order);
+
+    generateCommandFile(part_addition_order);
 }
 
 void Assembler::debugState()
@@ -155,12 +161,18 @@ void Assembler::debugState()
 
 }
 
+/*
+Generates a direct GCode file that can be uploaded to ARMS and 'printed' directly
+*/
+void Assembler::generateGCodeFile(std::vector<size_t> part_addition_order)
+{
+    GCodeGenerator::generate(initial_assembly_, target_assembly_, base_part_, part_addition_order, slicer_gcode_);
+}
+
 /*  Uses the grasps, part positions and path to generate the command file to be sent to ARMS
 */
-void Assembler::generateCommandFile()
+void Assembler::generateCommandFile(std::vector<size_t> part_addition_order)
 {
-    std::vector<size_t> ordered_part_additions = generatePartAdditionOrder();
-
     //In these commands for now let's give the part-height as the height of the pnp location relative to 0,
     //and the z location as the height of the pnp placement location relative to 0
     //You then might need to offset by the vacuum toolhead offset at some point
@@ -270,13 +282,13 @@ void Assembler::generateCommandFile()
 
 
     //Iterate through each of the added parts in the path
-    for (size_t part_id : ordered_part_additions)
+    for (size_t part_id : part_addition_order)
     {
         Part::PART_TYPE part_type = initial_assembly_->getPartById(part_id)->getType();
 
         RCLCPP_DEBUG(logger(), "Adding PLACE_PART with type %d and name %s", static_cast<int>(part_type), initial_assembly_->getPartById(part_id)->getName().c_str());
 
-        //Do nothing with the base object if it's internal  //TODO which it must be at the moment
+        //Do nothing with the base object if it's internal  //TODO which it must be at the moment - this must be the first part in the list right?
         if (part_id == base_part_->getId() && base_part_->getType() == Part::INTERNAL)
         {
             RCLCPP_DEBUG(logger(), "Skipping base object");
@@ -827,7 +839,10 @@ void Assembler::generateNegatives()
 
         CradleGenerator cradle_gen(part->getName(), *part->getShape());
 
-        cradle_gen.createSimpleNegative();
+        float part_jig_z_offset = cradle_gen.createSimpleNegative(BAY_SIZES[part->getBaySizeIndex()]);
+
+        initial_assembly_->setUnassembledPart(part, gp_Pnt(transform.X(), transform.Y(), JIG_CENTER_Z + part_jig_z_offset));
+
     }
 }
 
