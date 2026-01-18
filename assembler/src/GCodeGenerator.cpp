@@ -2,6 +2,7 @@
 #include "assembler/Assembly.hpp"
 #include "assembler/Part.hpp"
 #include "assembler/Config.hpp"
+#include "assembler/Logger.hpp"
 
 void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::shared_ptr<Assembly> target_assembly, std::shared_ptr<Part> base_part, std::vector<size_t> part_addition_order, std::vector<std::string> printer_gcode)
 {
@@ -32,6 +33,8 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
 
             gp_Vec pick_position = SumPoints(initial_transform, part->getVacuumGrasp());
 
+            RCLCPP_INFO(logger(), "Pick transform: %f %f grasp %f %f", initial_transform.X(), initial_transform.Y(), part->getVacuumGrasp().X(), part->getVacuumGrasp().Y());
+
             gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], part->getVacuumGrasp());
 
             gcode.push_back(";PLACE EXTERNAL PART COMMAND");
@@ -42,7 +45,7 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
 
             moveToPosition(gcode, pick_position.X(), pick_position.Y(), 3000);
 
-            moveToHeight(gcode, pick_position.Z() - 2);    //Including offset for vacuum nozzle
+            moveToHeight(gcode, pick_position.Z() - 4);    //Including offset for vacuum nozzle     //TODO need to check this
 
             vacuumOn(gcode);
 
@@ -50,7 +53,7 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
 
             moveToPosition(gcode, place_position.X(), place_position.Y());
 
-            moveToHeight(gcode, place_position.Z() - 2);    //Including offset for vacuum nozzle
+            moveToHeight(gcode, place_position.Z() - 4);    //Including offset for vacuum nozzle
 
             vacuumOff(gcode);
 
@@ -61,7 +64,7 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
         {            
             gp_Pnt initial_transform = initial_assembly->getUnassembledPartTransforms()[part];
 
-            gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], gp_Pnt(0, 0, 5));    //TODO need to calibrate fixing offset
+            gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], gp_Pnt(0, 0, 2.5));    //TODO need to calibrate fixing offset
 
             gcode.push_back(";PLACE FIXING COMMAND");
 

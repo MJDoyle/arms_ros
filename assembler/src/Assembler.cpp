@@ -16,6 +16,7 @@
 #include <fstream>
 #include <queue>
 #include <set>
+#include <stack>
 #include <map>
 
 #include <cstdlib>
@@ -73,7 +74,8 @@ void Assembler::generateAssemblySequence()
 
     generateInitialAssembly();  //Initial part positions not set here
 
-    assembly_path_ = breadthFirstZAssembly();   //All parts in the path are in the target_assembly position
+    //assembly_path_ = breadthFirstZAssembly();   //All parts in the path are in the target_assembly position
+    assembly_path_ = depthFirstZAssembly();   //All parts in the path are in the target_assembly position
 
     if (assembly_path_.size() < 2)
     {
@@ -532,6 +534,9 @@ void Assembler::generateSlicerGcode()
         if (part->getType() != Part::INTERNAL)
             continue;
 
+        //Put the part in its correct position before exporting as STL
+        part->setCentroidPosition(transform);
+
         std::stringstream filename_ss;
 
         filename_ss << WORKING_DIR << "internal_part_" << i << ".stl";
@@ -604,6 +609,78 @@ void Assembler::generateSlicerGcode()
             slicer_gcode_.pop_back();
         }
     }
+}
+
+std::vector<std::shared_ptr<AssemblyNode>> Assembler::depthFirstZAssembly()
+{
+    RCLCPP_INFO(logger(), "Generating assembly path (DFS)");
+
+    std::vector<std::shared_ptr<AssemblyNode>> path;
+
+    std::shared_ptr<AssemblyNode> target_node;
+
+    std::shared_ptr<AssemblyNode> base_node = std::shared_ptr<AssemblyNode>(new AssemblyNode());
+    base_node->assembly_ = target_assembly_;
+    base_node->id_ = nodeIdGenerator(target_assembly_->getAssembledPartIds());
+
+    // DFS uses a stack (LIFO)
+    std::stack<std::shared_ptr<AssemblyNode>> stack;
+
+    std::set<std::shared_ptr<AssemblyNode>> visited_nodes;
+    std::map<std::shared_ptr<AssemblyNode>, std::shared_ptr<AssemblyNode>> parents;
+
+    stack.push(base_node);
+    visited_nodes.emplace(base_node);
+
+    while (!stack.empty())
+    {
+        std::shared_ptr<AssemblyNode> current_node = stack.top();
+        stack.pop();
+
+        // Target condition: no assembled parts remaining
+        if (current_node->assembly_->getAssembledPartTransforms().empty())
+        {
+            target_node = current_node;
+            break; // DFS typically stops when first target found
+        }
+
+        std::vector<std::shared_ptr<AssemblyNode>> neighbours = findNodeNeighbours(current_node);
+
+        // Optional: reverse to mimic a deterministic "first neighbour" order
+        // if you care about which DFS path you get.
+        // std::reverse(neighbours.begin(), neighbours.end());
+
+        for (const std::shared_ptr<AssemblyNode>& neighbour : neighbours)
+        {
+            if (visited_nodes.find(neighbour) != visited_nodes.end())
+                continue;
+
+            visited_nodes.emplace(neighbour);
+            parents[neighbour] = current_node;
+            stack.push(neighbour);
+        }
+    }
+
+    // If we never found a target, or target has no parent (and isn't base) -> fail
+    if (!target_node || (target_node != base_node && !parents.count(target_node)))
+    {
+        RCLCPP_FATAL(logger(), "No assembly path found (DFS)");
+        rclcpp::shutdown();
+        return path;
+    }
+
+    // Reconstruct path (same as your BFS)
+    std::shared_ptr<AssemblyNode> path_node = target_node;
+    path.push_back(path_node);
+
+    while (parents.count(path_node))
+    {
+        path_node = parents[path_node];
+        path.push_back(path_node);
+    }
+
+    RCLCPP_INFO(logger(), "Assembly path found (DFS)");
+    return path;
 }
 
 
@@ -855,7 +932,7 @@ void Assembler::generateGrasps()
         //if (part->getType() == Part::INTERNAL)
         //    part->setPPGGrasp(PPGGraspGenerator::generate(part));
 
-        //if (part->getType() == Part::EXTERNAL)
-        //    part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
+        if (part->getType() == Part::EXTERNAL)
+            part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
     }
 }

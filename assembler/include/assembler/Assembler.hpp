@@ -63,6 +63,8 @@ private:
 
     std::vector<std::shared_ptr<AssemblyNode>> breadthFirstZAssembly();
 
+    std::vector<std::shared_ptr<AssemblyNode>> depthFirstZAssembly();
+
     std::vector<std::shared_ptr<AssemblyNode>> findNodeNeighbours(std::shared_ptr<AssemblyNode> node);
 
     std::shared_ptr<Assembly> initial_assembly_;

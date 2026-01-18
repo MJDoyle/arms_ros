@@ -322,11 +322,6 @@ TopoDS_Shape MakeConvexHullShape(const TopoDS_Shape& input,
 
 float CradleGenerator::createSimpleNegative(float bay_size)
 {
-
-    double clearance = 2.0;
-
-
-
     gp_Pnt shape_position = ShapeCentroid(shape_);
 
     TopoDS_Shape jigBlock = BRepPrimAPI_MakeBox(shape_position, bay_size, bay_size, JIG_HEIGHT);
@@ -334,7 +329,7 @@ float CradleGenerator::createSimpleNegative(float bay_size)
     jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), shape_position.Z()));
 
     //Create a scaled version of the shape for some clearance
-    TopoDS_Shape scaled_shape = UniformScaleShape(shape_, 1.03);    //TODO get scaling value from shape size
+    TopoDS_Shape scaled_shape = UniformScaleShape(shape_, 1.01);    //TODO get scaling value from shape size
 
     HullMesh hull = BuildConvexHullMesh(scaled_shape);
 
@@ -353,7 +348,7 @@ float CradleGenerator::createSimpleNegative(float bay_size)
 
     TopoDS_Shape final_jig = jigBlock;
 
-    BRepMesh_IncrementalMesh mesher2(convex_shape, 0.1);
+    BRepMesh_IncrementalMesh mesher2(convex_shape, 0.01);
 
     StlAPI_Writer writer2;
 
@@ -443,7 +438,7 @@ float CradleGenerator::createSimpleNegative(float bay_size)
 
     }
 
-    BRepMesh_IncrementalMesh mesher(final_jig, 0.1);
+    BRepMesh_IncrementalMesh mesher(final_jig, 0.01);
 
     StlAPI_Writer writer;
 

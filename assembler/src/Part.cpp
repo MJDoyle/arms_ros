@@ -77,11 +77,11 @@ gp_Pnt Part::generateBayPosition(std::vector<std::vector<bool>>& occupancy)
 
     occupancy[bay_size_index_][bay_index_] = true;
 
-    //Return the position the shape in the parts bay - base of the shape should be at -1 mm - TODO this needs to be calibrated
+    //Return the position the shape in the parts bay - base of the shape should be at -4 mm - TODO this needs to be calibrated
     
     return gp_Pnt(PARTS_BAY_POSITIONS[bay_size_index_][bay_index_].X(),
-                                               PARTS_BAY_POSITIONS[bay_size_index_][bay_index_].X(),
-                                               ShapeAxisSize(*shape_, 2) / 2 - 1);
+                                               PARTS_BAY_POSITIONS[bay_size_index_][bay_index_].Y(),
+                                               ShapeAxisSize(*shape_, 2) / 2 - 4);
 
 }
 
