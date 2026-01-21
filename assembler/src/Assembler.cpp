@@ -918,6 +918,11 @@ void Assembler::generateNegatives()
 
         float part_jig_z_offset = cradle_gen.createSimpleNegative(BAY_SIZES[part->getBaySizeIndex()]);
 
+        RCLCPP_INFO(logger(), "Jig z offset: %f", part_jig_z_offset);
+
+        RCLCPP_INFO(logger(), "Setting part transform %f %f %f", transform.X(), transform.Y(), JIG_CENTER_Z + part_jig_z_offset);
+
+
         initial_assembly_->setUnassembledPart(part, gp_Pnt(transform.X(), transform.Y(), JIG_CENTER_Z + part_jig_z_offset));
 
     }

@@ -189,4 +189,6 @@ gp_Dir outwardFaceNormal(TopoDS_Face face);
 
 double faceArea(const TopoDS_Face& face);
 
+TopoDS_Shape makeCompound(const std::vector<TopoDS_Shape>& shapes);
+
 #endif

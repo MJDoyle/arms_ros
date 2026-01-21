@@ -82,7 +82,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
 
                 gp_Pnt graspPosition = gp_Pnt(nozzle_x - shape_centroid.X(), nozzle_y - shape_centroid.Y(), nozzle_z - shape_centroid.Z() - 0.5 * nozzle_height);
-                RCLCPP_INFO(logger(), "Testing grasp | Position: %f %f %f", graspPosition.X(), graspPosition.Y(), graspPosition.Z());
+                //RCLCPP_INFO(logger(), "Testing grasp | Position: %f %f %f", graspPosition.X(), graspPosition.Y(), graspPosition.Z());
 
 
 
@@ -123,7 +123,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
                 //         continue;
                 // }
 
-                RCLCPP_INFO(logger(), "Nozzle intersection ok");
+                //RCLCPP_INFO(logger(), "Nozzle intersection ok");
 
 
 
@@ -170,7 +170,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
                 writer.Write(compound, ss.str().c_str());
 
-                RCLCPP_INFO(logger(), "Candidate grasp | Position: %f %f %f, nozzle intersection %f, and tip intersection %f", grasp.position.X(), grasp.position.Y(), grasp.position.Z(), nozzle_intersection_ratio, nozzle_tip_intersection_ratio);
+                //RCLCPP_INFO(logger(), "Candidate grasp | Position: %f %f %f, nozzle intersection %f, and tip intersection %f", grasp.position.X(), grasp.position.Y(), grasp.position.Z(), nozzle_intersection_ratio, nozzle_tip_intersection_ratio);
             }
         }      
     }
@@ -211,7 +211,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
     writer.Write(compound, ss.str().c_str());
 
-    return best_grasp_it->position.Translated(gp_Vec(0, 0, - nozzle_height * 0.5));
+    return best_grasp_it->position;
 }
 
 

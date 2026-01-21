@@ -77,6 +77,9 @@ gp_Pnt Part::generateBayPosition(std::vector<std::vector<bool>>& occupancy)
 
     occupancy[bay_size_index_][bay_index_] = true;
 
+    RCLCPP_INFO(logger(), "Bay index %d, bay size index %d", bay_index_, bay_size_index_);
+
+
     //Return the position the shape in the parts bay - base of the shape should be at -4 mm - TODO this needs to be calibrated
     
     return gp_Pnt(PARTS_BAY_POSITIONS[bay_size_index_][bay_index_].X(),

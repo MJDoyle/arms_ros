@@ -33,54 +33,70 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
 
             gp_Vec pick_position = SumPoints(initial_transform, part->getVacuumGrasp());
 
-            RCLCPP_INFO(logger(), "Pick transform: %f %f grasp %f %f", initial_transform.X(), initial_transform.Y(), part->getVacuumGrasp().X(), part->getVacuumGrasp().Y());
+            RCLCPP_INFO(logger(), "Pick transform: %f %f %f grasp %f %f %f", initial_transform.X(), initial_transform.Y(), initial_transform.Z(), part->getVacuumGrasp().X(), part->getVacuumGrasp().Y(), part->getVacuumGrasp().Z());
 
             gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], part->getVacuumGrasp());
 
             gcode.push_back(";PLACE EXTERNAL PART COMMAND");
 
+            moveToSafeHeight(gcode);
+
+            homeY(gcode);
+
+            homeX(gcode);
+
             toolChangeVacuum(gcode);
 
             moveToSafeHeight(gcode);
 
-            moveToPosition(gcode, pick_position.X(), pick_position.Y(), 3000);
+            moveToPosition(gcode, pick_position.X(), pick_position.Y(), 2000);
 
-            moveToHeight(gcode, pick_position.Z() - 4);    //Including offset for vacuum nozzle     //TODO need to check this
+            moveToHeight(gcode, pick_position.Z() - 2, 2000);    //Including offset for vacuum nozzle     //TODO need to check this
 
             vacuumOn(gcode);
 
-            moveToSafeHeight(gcode);
+            wait(gcode, 500);
 
-            moveToPosition(gcode, place_position.X(), place_position.Y());
+            moveToSafeHeight(gcode, 2000);
 
-            moveToHeight(gcode, place_position.Z() - 4);    //Including offset for vacuum nozzle
+            moveToPosition(gcode, place_position.X(), place_position.Y(), 2000);
+
+            moveToHeight(gcode, place_position.Z() - 2, 2000);    //Including offset for vacuum nozzle
 
             vacuumOff(gcode);
 
-            moveToSafeHeight(gcode);
+            wait(gcode, 500);
+
+            moveToSafeHeight(gcode, 2000);
         }
 
         else if (part_type == Part::SCREW)
         {            
             gp_Pnt initial_transform = initial_assembly->getUnassembledPartTransforms()[part];
 
-            gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], gp_Pnt(0, 0, 2.5));    //TODO need to calibrate fixing offset
+            gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], gp_Pnt(0, 0, 2.0));    //TODO need to calibrate fixing offset
 
             gcode.push_back(";PLACE FIXING COMMAND");
 
-            toolChangeDriver(gcode);
-
             moveToSafeHeight(gcode);
 
-            moveToPosition(gcode, place_position.X(), place_position.Y(), 3000);
+            homeY(gcode);
 
-            moveToHeight(gcode, place_position.Z());
+            homeX(gcode);
+
+            toolChangeDriver(gcode);
+
+            moveToSafeHeight(gcode, 2000);
+
+            moveToPosition(gcode, place_position.X(), place_position.Y(), 2000);
+
+            moveToHeight(gcode, place_position.Z(), 2000);
 
             insertScrew(gcode);
 
             wait(gcode, 6000);
 
-            moveToSafeHeight(gcode);
+            moveToSafeHeight(gcode, 2000);
         }      
     }
 
@@ -128,14 +144,14 @@ void GCodeGenerator::moveToPosition(std::vector<std::string> &gcode, float x, fl
         gcode.push_back("G0 X" + std::to_string(x) + " Y" + std::to_string(y) + " F" + std::to_string(feed));
 }
 
-void GCodeGenerator::moveToHeight(std::vector<std::string> &gcode, float z)
+void GCodeGenerator::moveToHeight(std::vector<std::string> &gcode, float z, int feed)
 {
-    gcode.push_back("G0 Z" + std::to_string(z));
+    gcode.push_back("G0 Z" + std::to_string(z) + " F" + std::to_string(feed));
 }
 
-void GCodeGenerator::moveToSafeHeight(std::vector<std::string> &gcode)
+void GCodeGenerator::moveToSafeHeight(std::vector<std::string> &gcode, int feed)
 {
-    moveToHeight(gcode, 100);
+    moveToHeight(gcode, 100, feed);
 }
 
 void GCodeGenerator::insertScrew(std::vector<std::string> &gcode)
@@ -156,4 +172,14 @@ void GCodeGenerator::vacuumOff(std::vector<std::string> &gcode)
 void GCodeGenerator::wait(std::vector<std::string> &gcode, float duration)
 {
     gcode.push_back("G4 P" + std::to_string(duration));
+}
+
+void GCodeGenerator::homeX(std::vector<std::string> &gcode)
+{
+    gcode.push_back("G28 X");
+}
+
+void GCodeGenerator::homeY(std::vector<std::string> &gcode)
+{
+    gcode.push_back("G28 Y");
 }

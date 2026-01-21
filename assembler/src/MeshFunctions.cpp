@@ -307,6 +307,20 @@ double faceArea(const TopoDS_Face& face)
     return props.Mass();
 }
 
+TopoDS_Shape makeCompound(const std::vector<TopoDS_Shape>& shapes)
+{
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+
+    for (const auto& shape : shapes)
+    {
+        builder.Add(compound, shape);
+    }
+
+    return compound;
+}
+
 // void ProjectedContourFromShape(TopoDS_Shape shape, gp_Pnt origin, gp_Dir normal)
 // {
 //     gp_Pln plane(origin, normal);

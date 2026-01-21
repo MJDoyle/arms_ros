@@ -96,6 +96,7 @@ void ModelLoader::RecurrentAddPart(const TDF_Label& currentShape, const Handle(X
     std::string shapeName = GetShapeName(currentShape);
     Part::PART_TYPE shapeType;                                   //The type of part, as extracted from the shape name
     TDF_LabelSequence childShapes;
+    TopoDS_Shape shape = shapeTool->GetShape(currentShape);
 
     RCLCPP_DEBUG(logger(), "Adding part %s on level %d", shapeName.c_str(), level);
 
@@ -111,8 +112,30 @@ void ModelLoader::RecurrentAddPart(const TDF_Label& currentShape, const Handle(X
     else
         shapeType = Part::NONE;
 
+
+    BRepCheck_Analyzer ana(shape);
+
+    if (!ana.IsValid()) {
+
+        RCLCPP_WARN(logger(), "Shape %s is invalid, attempting fix", shapeName.c_str());
+
+        Handle(ShapeFix_Shape) aFixShape = new ShapeFix_Shape();
+        aFixShape->Init(shape);
+
+        aFixShape->Perform();
+
+        shape = aFixShape->Shape();
+
+        BRepCheck_Analyzer ana2(shape);
+
+        if (!ana.IsValid())
+        {
+            RCLCPP_FATAL(logger(), "WARNING: Shape is still invalid after fix attempt");
+        }
+    }
+
     if (shapeType != Part::NONE)
-        parts.push_back(std::shared_ptr<Part>(new Part(std::make_shared<TopoDS_Shape>(shapeTool->GetShape(currentShape)), shapeType, next_id_++, shapeName)));
+        parts.push_back(std::shared_ptr<Part>(new Part(std::make_shared<TopoDS_Shape>(shape), shapeType, next_id_++, shapeName)));
 
     shapeTool->GetComponents(currentShape, childShapes);
 

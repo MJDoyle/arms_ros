@@ -26,9 +26,9 @@ class GCodeGenerator
 
     static void moveToPosition(std::vector<std::string> &gcode, float x, float y, int feed = -1);
 
-    static void moveToHeight(std::vector<std::string> &gcode, float z);
+    static void moveToHeight(std::vector<std::string> &gcode, float z, int feed = 3000);
 
-    static void moveToSafeHeight(std::vector<std::string> &gcode);
+    static void moveToSafeHeight(std::vector<std::string> &gcode, int feed = 3000);
 
     static void insertScrew(std::vector<std::string> &gcode);
 
@@ -37,6 +37,10 @@ class GCodeGenerator
     static void vacuumOff(std::vector<std::string> &gcode);
 
     static void wait(std::vector<std::string> &gcode, float duration);
+
+    static void homeX(std::vector<std::string> &gcode);
+
+    static void homeY(std::vector<std::string> &gcode);
 };
 
 #endif
