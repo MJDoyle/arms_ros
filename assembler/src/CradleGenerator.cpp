@@ -133,7 +133,8 @@ static bool IsDegenerateTri(const gp_Pnt& a, const gp_Pnt& b, const gp_Pnt& c, d
 }
 
 TopoDS_Shape makeConvexHullSolid_Robust(const std::vector<gp_Pnt>& verts,
-                                       const std::vector<uint32_t>& indices)
+                                       const std::vector<uint32_t>& indices,
+                                        const double sewTol = 1e-4)
 {
   if (verts.empty() || indices.empty() || (indices.size() % 3) != 0)
   {
@@ -146,7 +147,7 @@ TopoDS_Shape makeConvexHullSolid_Robust(const std::vector<gp_Pnt>& verts,
   const double epsArea = 1e-12;  // triangle area threshold
 
   // Use a sewing tolerance that is not insanely tight for numeric hull vertices
-  const double sewTol = 1e-4; // start here; if your models are tiny, reduce
+  //const double sewTol = 1e-4; // start here; if your models are tiny, reduce
 
   BRepBuilderAPI_Sewing sewing(sewTol, /*option1*/ Standard_True, /*option2*/ Standard_True, /*option3*/ Standard_True);
 
@@ -310,7 +311,7 @@ TopoDS_Shape safeCut(const TopoDS_Shape& A, const TopoDS_Shape& B, double fuzzy 
   }
 }
   
-float CradleGenerator::createSimpleNegative(float bay_size)
+float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
 {
     RCLCPP_INFO(logger(), "Shape: %s", name_.c_str());
   
@@ -342,13 +343,45 @@ float CradleGenerator::createSimpleNegative(float bay_size)
     RCLCPP_INFO(logger(), "Built convex hull of %ld vertices and %ld indices",
                 hull.vertices.size(), hull.indices.size());
   
-    // Robust hull B-Rep
-    TopoDS_Shape convex_shape = makeConvexHullSolid_Robust(hull.vertices, hull.indices);
-    if (convex_shape.IsNull())
+    TopoDS_Shape convex_shape;
+
+    double sew_tol = 1e-10;
+
+    while (true)
     {
-      RCLCPP_ERROR(logger(), "Convex hull B-Rep build failed (null). Aborting.");
-      return 0.0f;
-    }
+      RCLCPP_INFO(logger(), "Attempting to make convex scalled shape with sew_tol: %f", sew_tol);
+
+      convex_shape = makeConvexHullSolid_Robust(hull.vertices, hull.indices, sew_tol);
+
+      if (convex_shape.IsNull())
+      {
+        RCLCPP_ERROR(logger(), "Convex hull B-Rep build failed (null). Aborting.");
+        return 0.0f;
+      }
+
+      BRepCheck_Analyzer ana(convex_shape);
+      if (!ana.IsValid())
+      {
+        RCLCPP_WARN(logger(), "Not valid");
+
+
+        sew_tol *= 10;
+      }
+
+      else
+      {
+        break;
+      }
+    } 
+    
+
+    // // Robust hull B-Rep
+    // TopoDS_Shape convex_shape = makeConvexHullSolid_Robust(hull.vertices, hull.indices);
+    // if (convex_shape.IsNull())
+    // {
+    //   RCLCPP_ERROR(logger(), "Convex hull B-Rep build failed (null). Aborting.");
+    //   return 0.0f;
+    // }
     RCLCPP_INFO(logger(), "Made convex scaled shape");
   
     // (Optional) one more fix pass
@@ -438,7 +471,7 @@ float CradleGenerator::createSimpleNegative(float bay_size)
   
     StlAPI_Writer writer;
     std::stringstream ss;
-    ss << OUTPUT_DIR << name_ << "_jig.stl";
+    ss << OUTPUT_DIR << "jig_" << name_ << "_size_" << bay_size << "_index_" << bay_index << ".stl";
     writer.Write(final_jig, ss.str().c_str());
   
     return jig_part_z_offset;

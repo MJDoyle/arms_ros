@@ -30,6 +30,22 @@
 #include <TCollection_ExtendedString.hxx>
 #include <TCollection_AsciiString.hxx>
 
+#include <BRepExtrema_DistShapeShape.hxx>
+
+#include <BRepBuilderAPI_MakeVertex.hxx>
+
+#include <Extrema_ExtPS.hxx>
+#include <GeomAdaptor_Surface.hxx>
+#include <Precision.hxx>
+
+#include <Geom_Surface.hxx>
+#include <BRep_Tool.hxx>
+#include <TopLoc_Location.hxx>
+
+#include <BRepTopAdaptor_FClass2d.hxx>
+#include <TopAbs_State.hxx>
+#include <gp_Pnt2d.hxx>
+
 #include <iostream>
 #include <algorithm>
 #include <cctype>

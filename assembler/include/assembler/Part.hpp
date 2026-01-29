@@ -48,6 +48,7 @@ public:
     std::string                     getName()               { return name_; }
     std::shared_ptr<TopoDS_Shape>   getShape()              { return shape_; }
 
+    int                             getBayIndex()           { return bay_index_; }
     int                             getBaySizeIndex()       { return bay_size_index_; }
 
 private:

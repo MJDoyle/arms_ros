@@ -6,10 +6,111 @@
 
 #include "assembler/Config.hpp"
 
+bool ClosestPointOnFace_SurfaceOnly(const TopoDS_Face& face, const gp_Pnt& query, gp_Pnt& out)
+{
+  TopLoc_Location loc;
+  Handle(Geom_Surface) surf = BRep_Tool::Surface(face, loc);
+  if (surf.IsNull()) return false;
+
+  // Transform query point into the surface's location space
+  gp_Pnt qLocal = query.Transformed(loc.Transformation().Inverted());
+
+  // UV bounds of the face (important for init ranges)
+  Standard_Real uMin, uMax, vMin, vMax;
+    BRepTools::UVBounds(face, uMin, uMax, vMin, vMax);
+
+
+  GeomAdaptor_Surface adapt(surf, uMin, uMax, vMin, vMax);
+
+  Extrema_ExtPS ext(qLocal, adapt, Precision::Confusion(), Precision::Confusion());
+  if (!ext.IsDone() || ext.NbExt() <= 0) return false;
+
+  // pick the best (minimum distance)
+  Standard_Real bestSq = RealLast();
+  Standard_Integer bestI = -1;
+  for (Standard_Integer i = 1; i <= ext.NbExt(); ++i)
+  {
+    const Standard_Real d2 = ext.SquareDistance(i);
+    if (d2 < bestSq)
+    {
+      bestSq = d2;
+      bestI = i;
+    }
+  }
+
+  if (bestI < 0) return false;
+
+  Extrema_POnSurf ps = ext.Point(bestI);
+  Standard_Real u, v;
+  ps.Parameter(u, v);
+
+  // Check if (u,v) lies inside the trimmed face
+  BRepTopAdaptor_FClass2d classifier(face, Precision::PConfusion());
+  TopAbs_State st = classifier.Perform(gp_Pnt2d(u, v), Precision::PConfusion());
+
+  if (st == TopAbs_IN || st == TopAbs_ON)
+  {
+    gp_Pnt pLocal = ps.Value();
+    gp_Pnt pWorld = pLocal.Transformed(loc.Transformation());
+
+    out = pWorld;
+
+    return true; 
+  }
+
+  return false;
+}
+
+
+gp_Pnt ClosestPointOnFace(const TopoDS_Face& face, const gp_Pnt& query)
+{
+
+  gp_Pnt out = query;
+
+  if (ClosestPointOnFace_SurfaceOnly(face, query, out))
+  {
+    RCLCPP_INFO(logger(), "Closest point within face: %f, %f, %f", out.X(), out.Y(), out.Z());
+
+      return out;
+  }
+
+
+  Standard_Real best = RealLast();
+  gp_Pnt bestP;
+
+
+  // Represent the query point as a TopoDS_Vertex
+  TopoDS_Vertex vtx = BRepBuilderAPI_MakeVertex(query);
+
+  for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next())
+  {
+    const TopoDS_Edge& e = TopoDS::Edge(ex.Current());
+
+    BRepExtrema_DistShapeShape dist(vtx, e);
+    dist.Perform();
+    if (!dist.IsDone() || dist.Value() >= best) continue;
+
+    best = dist.Value();
+
+    // PointsOnShape2: point on the edge (shape2)
+    if (dist.NbSolution() > 0)
+    {
+      gp_Pnt pOnEdge = dist.PointOnShape2(1);
+      bestP = pOnEdge;
+    }
+  }
+
+  if (best < RealLast())
+  {
+    out = bestP;
+  }
+
+  return out;
+}
 
 gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 {
-    RCLCPP_INFO(logger(), "Generating vacuum grasp");
+    RCLCPP_INFO(logger(), (std::string("Generating vacuum grasp for ") + part->getName()).c_str());
 
     struct CandidateGrasp {
         double com_distance;
@@ -18,9 +119,10 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
         float tip_intersection;
     };
 
+    //TODO this will only accept flat surfaces - it won't handle bumpy surfaces very well
     TopoDS_Shape shape = *(part->getShape());
     double nozzle_height = 20;
-    double nozzle_tip_height = 1;
+    double nozzle_tip_height = 0.5; 
     double nozzle_radius = 4.2;
     TopoDS_Shape nozzle_tip = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_tip_height);
     TopoDS_Shape nozzle = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_height);
@@ -31,6 +133,9 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
     std::vector<CandidateGrasp> candidate_grasps;
 
+    bool grasp_found = false;
+
+    //TODO you should first order faces by their closest point to CoM, and start with those first (and find the best point on each face then compare)
     for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next())
     {
         TopoDS_Face face = TopoDS::Face(exp.Current());
@@ -49,32 +154,40 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
         if (faceArea(face) < 50)
             continue;
 
-
-
- 
         Handle(Geom_Plane) gpln = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(face));
         gp_Pln plane = gpln->Pln();
         
         double largest_face_axis = std::max(ShapeAxisSize(face, 0), ShapeAxisSize(face, 1));  //TODO
 
+        gp_Pnt starting_point = ClosestPointOnFace(face, shape_centroid);
+
         gp_Pnt face_centroid = ShapeCentroid(face);
 
         Standard_Real face_highest_point = ShapeHighestPoint(face);
 
-        RCLCPP_INFO(logger(), "Checking face of area %f and highest point %f", faceArea(face), face_highest_point);
+        RCLCPP_INFO(logger(), "Checking face of area %f and centroid %f, %f and highest point %f", faceArea(face), face_centroid.X(), face_centroid.Y(), face_highest_point);
+
+        RCLCPP_INFO(logger(), "Closest point to CoM: %f, %f", starting_point.X(), starting_point.Y());
 
         double nozzle_z = face_highest_point + 0.5 * nozzle_height;
         double nozzle_tip_z = face_highest_point - 0.5 * nozzle_tip_height;
 
         RCLCPP_INFO(logger(), "Nozzle CoM z position %f and tip CoM z position %f", nozzle_z, nozzle_tip_z);
 
-        for (int r = 0; r < largest_face_axis; r ++)
+        //TODO rework so it's nicer - also if a grasp can't be found on the first pass then try iteratively with smaller dr and dth
+        for (double r = 0; r < largest_face_axis; r += 0.5)
         {
+
+            RCLCPP_INFO(logger(), "Trying radius of %f", r);            
+
             //Iterate over angle
-            for (int th = 0; th < 360; th += 90)
+            for (int th = 0; th < 360; th += 45)
             {
-                double nozzle_x = face_centroid.X() + r * cos(th * M_PI / 180);
-                double nozzle_y = face_centroid.Y() + r * sin(th * M_PI / 180);                
+                //double nozzle_x = face_centroid.X() + r * cos(th * M_PI / 180);
+                //double nozzle_y = face_centroid.Y() + r * sin(th * M_PI / 180);                
+
+                double nozzle_x = starting_point.X() + r * cos(th * M_PI / 180);
+                double nozzle_y = starting_point.Y() + r * sin(th * M_PI / 180);
 
                 nozzle = ShapeSetCentroid(nozzle, gp_Pnt(nozzle_x, nozzle_y, nozzle_z));
 
@@ -103,7 +216,10 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
                 }
 
                 if (nozzle_intersection_ratio > 0.0001)
+                {   
+                    RCLCPP_INFO(logger(), "FAILED nozzle intersection %f", nozzle_intersection_ratio);
                     continue;
+                }
 
 
 
@@ -131,13 +247,18 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
                 TopoDS_Shape nozzle_tip_intersection = ShapeIntersection(nozzle_tip, shape);
 
                 if (nozzle_tip_intersection.IsNull())
+                {
+                    RCLCPP_INFO(logger(), "FAILED null nozzle tip intersection");
                     continue;
+                }
 
                 double nozzle_tip_intersection_ratio = ShapeVolume(nozzle_tip_intersection) / nozzle_tip_volume;
 
-                if (nozzle_tip_intersection_ratio < 0.5)
+                if (nozzle_tip_intersection_ratio < 0.99)
+                {   
+                    RCLCPP_INFO(logger(), "FAILED nozzle tip intersection %f", nozzle_tip_intersection_ratio);
                     continue;
-
+                }
                 gp_Vec com_delta = gp_Vec(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), 0);
 
                 CandidateGrasp grasp;
@@ -170,9 +291,23 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
                 writer.Write(compound, ss.str().c_str());
 
+                grasp_found = true;
+
                 //RCLCPP_INFO(logger(), "Candidate grasp | Position: %f %f %f, nozzle intersection %f, and tip intersection %f", grasp.position.X(), grasp.position.Y(), grasp.position.Z(), nozzle_intersection_ratio, nozzle_tip_intersection_ratio);
             }
-        }      
+
+            if (grasp_found)
+            {
+                RCLCPP_INFO(logger(), "Grasp found");
+
+                break;
+            }
+        }   
+        
+        if (grasp_found)
+        {
+            break;
+        }
     }
     
     if (candidate_grasps.size() == 0)

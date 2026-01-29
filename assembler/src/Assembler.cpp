@@ -916,7 +916,7 @@ void Assembler::generateNegatives()
 
         CradleGenerator cradle_gen(part->getName(), *part->getShape());
 
-        float part_jig_z_offset = cradle_gen.createSimpleNegative(BAY_SIZES[part->getBaySizeIndex()]);
+        float part_jig_z_offset = cradle_gen.createSimpleNegative(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex());
 
         RCLCPP_INFO(logger(), "Jig z offset: %f", part_jig_z_offset);
 
@@ -934,8 +934,13 @@ void Assembler::generateGrasps()
 {
     for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms()) //No unassembled parts in target assembly
     {
-        //if (part->getType() == Part::INTERNAL)
-        //    part->setPPGGrasp(PPGGraspGenerator::generate(part));
+        RCLCPP_INFO(logger(), "Part type: %d", part->getType());
+
+        if (part->getType() == Part::INTERNAL)
+        {
+            RCLCPP_INFO(logger(), "Internal type: %d", Part::INTERNAL);
+            part->setPPGGrasp(PPGGraspGenerator::generate(part));
+        }
 
         if (part->getType() == Part::EXTERNAL)
             part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
