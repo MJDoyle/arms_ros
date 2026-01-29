@@ -143,8 +143,8 @@ TopoDS_Shape makeConvexHullSolid_Robust(const std::vector<gp_Pnt>& verts,
   }
 
   // Heuristics in model units (meters in your pipeline, presumably)
-  const double epsLen  = 1e-7;   // edge length threshold
-  const double epsArea = 1e-12;  // triangle area threshold
+  const double epsLen  = 1e-4;   // edge length threshold
+  const double epsArea = 1e-8;  // triangle area threshold
 
   // Use a sewing tolerance that is not insanely tight for numeric hull vertices
   //const double sewTol = 1e-4; // start here; if your models are tiny, reduce
@@ -222,20 +222,47 @@ TopoDS_Shape makeConvexHullSolid_Robust(const std::vector<gp_Pnt>& verts,
     return TopoDS_Shape();
   }
 
-  // Extract a shell (handle compound / multiple shells)
-  TopoDS_Shell shell;
-  for (TopExp_Explorer ex(stitched, TopAbs_SHELL); ex.More(); ex.Next())
+  // // Extract a shell (handle compound / multiple shells)
+  // TopoDS_Shell shell;
+  // for (TopExp_Explorer ex(stitched, TopAbs_SHELL); ex.More(); ex.Next())
+  // {
+  //   shell = TopoDS::Shell(ex.Current());
+  //   break;
+  // }
+  // if (shell.IsNull())
+  // {
+  //   std::cerr << "ERROR: No shell produced by sewing\n";
+  //   return TopoDS_Shape();
+  // }
+
+  ShapeUpgrade_UnifySameDomain unify(stitched, true, true, true);
+unify.Build();
+TopoDS_Shape unified = unify.Shape();
+
+// unified might be a shell, a compound containing shells, or even a solid.
+// Extract a shell again:
+TopoDS_Shell unifiedShell;
+for (TopExp_Explorer ex(unified, TopAbs_SHELL); ex.More(); ex.Next())
+{
+  unifiedShell = TopoDS::Shell(ex.Current());
+  break;
+}
+
+if (unifiedShell.IsNull())
+{
+  // If unify somehow returned a solid already, handle that too:
+  if (unified.ShapeType() == TopAbs_SOLID)
   {
-    shell = TopoDS::Shell(ex.Current());
-    break;
-  }
-  if (shell.IsNull())
-  {
-    std::cerr << "ERROR: No shell produced by sewing\n";
-    return TopoDS_Shape();
+    TopoDS_Solid solid = TopoDS::Solid(unified);
+    return solid;
   }
 
-  BRepBuilderAPI_MakeSolid mkSolid(shell);
+  std::cerr << "ERROR: No shell produced after unify\n";
+  return TopoDS_Shape();
+}
+
+
+  BRepBuilderAPI_MakeSolid mkSolid(unifiedShell);
   if (!mkSolid.IsDone())
   {
     std::cerr << "ERROR: MakeSolid failed\n";
@@ -263,7 +290,7 @@ TopoDS_Shape makeConvexHullSolid_Robust(const std::vector<gp_Pnt>& verts,
   return fixed;
 }
 
-TopoDS_Shape safeCut(const TopoDS_Shape& A, const TopoDS_Shape& B, double fuzzy = 1e-6)
+TopoDS_Shape safeCut(const TopoDS_Shape& A, const TopoDS_Shape& B, double fuzzy = 1e-4)
 {
   if (A.IsNull() || B.IsNull())
   {
@@ -329,17 +356,10 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
       TopoDS_Shape tmp = safeCut(jigBlock, notch, /*fuzzy*/ 1e-6);
       if (!tmp.IsNull()) jigBlock = tmp;
     }
-  
-    // Scale
-    const double largest_shape_axis = std::max(ShapeAxisSize(shape_, 0), ShapeAxisSize(shape_, 1));
-    const float scaling_distance = 0.6f;
-    const float scaling_factor = float((largest_shape_axis + scaling_distance) / largest_shape_axis);
-  
-    TopoDS_Shape scaled_shape = UniformScaleShape(shape_, scaling_factor);
-    RCLCPP_INFO(logger(), "Scaled shape");
-  
+
+    RCLCPP_INFO(logger(), "Pre build");
     // Convex hull mesh from triangulated points (deflection affects this!)
-    HullMesh hull = BuildConvexHullMesh(scaled_shape, /*deflection*/ 0.01);
+    HullMesh hull = BuildConvexHullMesh(shape_, /*deflection*/ 0.01);
     RCLCPP_INFO(logger(), "Built convex hull of %ld vertices and %ld indices",
                 hull.vertices.size(), hull.indices.size());
   
@@ -373,28 +393,34 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
         break;
       }
     } 
-    
 
-    // // Robust hull B-Rep
-    // TopoDS_Shape convex_shape = makeConvexHullSolid_Robust(hull.vertices, hull.indices);
-    // if (convex_shape.IsNull())
-    // {
-    //   RCLCPP_ERROR(logger(), "Convex hull B-Rep build failed (null). Aborting.");
-    //   return 0.0f;
-    // }
-    RCLCPP_INFO(logger(), "Made convex scaled shape");
+    RCLCPP_INFO(logger(), "Made convex");
+
+    // Scale
+    const double largest_shape_axis = std::max(ShapeAxisSize(convex_shape, 0), ShapeAxisSize(convex_shape, 1));
+    const float scaling_distance = 0.6f;
+    const float scaling_factor = float((largest_shape_axis + scaling_distance) / largest_shape_axis);
   
+    TopoDS_Shape scaled_convex_shape = UniformScaleShape(convex_shape, scaling_factor);
+    RCLCPP_INFO(logger(), "Scaled shape");
+
     // (Optional) one more fix pass
     
     Handle(ShapeFix_Shape) fix = new ShapeFix_Shape();
-    fix->Init(convex_shape);
+    fix->Init(scaled_convex_shape);
     fix->Perform();
-    convex_shape = fix->Shape();
-    
+    scaled_convex_shape = fix->Shape();
+
     RCLCPP_INFO(logger(), "Fixed convex scaled shape");
-  
+
+    BRepCheck_Analyzer ana(scaled_convex_shape);
+    if (!ana.IsValid())
+    {
+      RCLCPP_WARN(logger(), "Shape not valid");
+    }
+
     // Debug exports (safe)
-    SaveShapeAsSTL(convex_shape, WORKING_DIR + name_ + "_convex_scaled_shape.stl");
+    SaveShapeAsSTL(scaled_convex_shape, WORKING_DIR + name_ + "_convex_scaled_shape.stl");
     SaveShapeAsSTL(shape_,       WORKING_DIR + name_ + "_shape.stl");
   
     TopoDS_Shape final_jig = jigBlock;
@@ -409,8 +435,11 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
   
       TopoDS_Shape movedBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), z));
   
+
+      SaveShapeAsSTL(makeCompound({movedBlock, scaled_convex_shape}), WORKING_DIR + name_ + "_jig_part_precut_" + std::to_string(i) + ".stl");
+
       // Cut
-      TopoDS_Shape jig = safeCut(movedBlock, convex_shape, /*fuzzy*/ 1e-5);
+      TopoDS_Shape jig = safeCut(movedBlock, scaled_convex_shape, /*fuzzy*/ 1e-5);
       if (jig.IsNull())
       {
         RCLCPP_WARN(logger(), "Cut failed at step %d (z=%.3f). Skipping this step.", i, z);
@@ -436,11 +465,15 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
           if (surf.IsNull() || !surf->IsKind(STANDARD_TYPE(Geom_Plane)))
             continue;
   
+          //TODO ignore faces with tiny area
+
           gp_Dir normal = outwardFaceNormal(face);
   
           // Ignore faces that don't point downwards
-          if (normal.Angle(UPWARDS) <= M_PI * 0.5001)
+          if (normal.Angle(UPWARDS) <= M_PI * 0.6)
             continue;
+
+          RCLCPP_INFO(logger(), "Downward face with angle %f and area %f and centroid %f %f %f", normal.Angle(UPWARDS), faceArea(face), ShapeCentroid(face).X(), ShapeCentroid(face).Y(), ShapeCentroid(face).Z());
   
           num_downwards_faces++;
         }
@@ -453,7 +486,10 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
       }
   
       if (num_downwards_faces > 1)
+      {
+        RCLCPP_INFO(logger(), "%d downwards faces detected)", num_downwards_faces);
         break;
+      }
   
       jig_part_z_offset = float(ShapeCentroid(shape_).Z() - ShapeCentroid(jig).Z());
       final_jig = jig;

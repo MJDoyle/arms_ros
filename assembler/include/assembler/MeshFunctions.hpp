@@ -27,6 +27,8 @@
 
 #include <GeomAbs_SurfaceType.hxx>
 
+#include <ShapeUpgrade_UnifySameDomain.hxx>
+
 #include <TCollection_ExtendedString.hxx>
 #include <TCollection_AsciiString.hxx>
 

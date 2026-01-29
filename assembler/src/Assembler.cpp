@@ -943,6 +943,9 @@ void Assembler::generateGrasps()
         }
 
         if (part->getType() == Part::EXTERNAL)
+        {
+            RCLCPP_INFO(logger(), "External type: %d", Part::EXTERNAL);
             part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
+        }
     }
 }
