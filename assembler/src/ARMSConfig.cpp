@@ -15,12 +15,21 @@ const std::vector<std::vector<gp_Pnt>> PARTS_BAY_POSITIONS = {{gp_Pnt(331.13, 11
                                                                gp_Pnt(376.21, 119.26, 0), 
                                                                gp_Pnt(421.29, 119.52, 0), 
                                                                gp_Pnt(511.45, 120.04, 0),
-                                                               gp_Pnt(556.53, 120.3, 0)},
+                                                               gp_Pnt(556.53, 120.3, 0),
+                                                               gp_Pnt(0, 0, 0),             //TODO NEW PARTS BAYS
+                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0)},
 
                                                               {gp_Pnt(341.33, 64.5, 0),
                                                                gp_Pnt(406.36, 64.86, 0),
                                                                gp_Pnt(471.39, 65.23, 0),
-                                                               gp_Pnt(536.43, 65.6, 0)}};
+                                                               gp_Pnt(536.43, 65.6, 0),
+                                                               gp_Pnt(0, 0, 0),             //TODO NEW PARTS BAYS
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0)}};
 
                                                  //[(576.4, 245.8), (576.4, 195.8), (576.4, 145.8), (576.4, 95.8)]
                                                  

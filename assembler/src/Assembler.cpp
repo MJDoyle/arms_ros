@@ -51,6 +51,79 @@ void Assembler::initialisePartBays()
     }
 }
 
+void Assembler::saveAssemblyPath()
+{
+    YAML::Node root;
+    YAML::Node path_node = YAML::Node(YAML::NodeType::Sequence);
+    for (auto node : assembly_path_) {
+        YAML::Node node_yaml;
+        YAML::Node assembled = YAML::Node(YAML::NodeType::Map);
+        for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms()) {
+            YAML::Node pos = YAML::Node(YAML::NodeType::Sequence);
+            pos.push_back(transform.X());
+            pos.push_back(transform.Y());
+            pos.push_back(transform.Z());
+            assembled[std::to_string(part->getId())] = pos;
+        }
+        node_yaml["assembled"] = assembled;
+        YAML::Node unassembled = YAML::Node(YAML::NodeType::Map);
+        for (auto const& [part, transform] : node->assembly_->getUnassembledPartTransforms()) {
+            YAML::Node pos = YAML::Node(YAML::NodeType::Sequence);
+            pos.push_back(transform.X());
+            pos.push_back(transform.Y());
+            pos.push_back(transform.Z());
+            unassembled[std::to_string(part->getId())] = pos;
+        }
+        node_yaml["unassembled"] = unassembled;
+        path_node.push_back(node_yaml);
+    }
+    root["path"] = path_node;
+
+    std::stringstream ss;
+
+    ss << WORKING_DIR << name_ << "_cache.yaml";
+
+    std::ofstream fout(ss.str());
+
+    fout << root;
+    fout.close();
+}
+
+bool Assembler::loadAssemblyPath()
+{
+    std::stringstream ss;
+
+    ss << WORKING_DIR << name_ << "_cache.yaml";
+
+    std::ifstream fin(ss.str());
+    if (!fin) {
+        return false;
+    }
+    YAML::Node root = YAML::Load(fin);
+    assembly_path_.clear();
+    for (auto node_yaml : root["path"]) {
+        auto assembly = std::make_shared<Assembly>();
+        for (auto id_pos : node_yaml["assembled"]) {
+            size_t id = std::stoul(id_pos.first.as<std::string>());
+            auto pos_list = id_pos.second;
+            gp_Pnt pos(pos_list[0].as<double>(), pos_list[1].as<double>(), pos_list[2].as<double>());
+            auto part = initial_assembly_->getPartById(id);
+            assembly->setAssembledPart(part, pos);
+        }
+        for (auto id_pos : node_yaml["unassembled"]) {
+            size_t id = std::stoul(id_pos.first.as<std::string>());
+            auto pos_list = id_pos.second;
+            gp_Pnt pos(pos_list[0].as<double>(), pos_list[1].as<double>(), pos_list[2].as<double>());
+            auto part = initial_assembly_->getPartById(id);
+            assembly->setUnassembledPart(part, pos);
+        }
+        auto assembly_node = std::make_shared<AssemblyNode>();
+        assembly_node->assembly_ = assembly;
+        assembly_path_.push_back(assembly_node);
+    }
+    return true;
+}
+
 /*  The main assembler function. Generates grasps and cradles for each part as appropriate, determines the correct order of assembly, and produces a .yaml command file to be sent to ARMS
 */
 void Assembler::generateAssemblySequence() 
@@ -74,8 +147,20 @@ void Assembler::generateAssemblySequence()
 
     generateInitialAssembly();  //Initial part positions not set here
 
-    //assembly_path_ = breadthFirstZAssembly();   //All parts in the path are in the target_assembly position
-    assembly_path_ = depthFirstZAssembly();   //All parts in the path are in the target_assembly position
+    if (!loadAssemblyPath()) {
+
+        RCLCPP_INFO(logger(), "No cached path found, creating new one");
+
+        //assembly_path_ = breadthFirstZAssembly();   //All parts in the path are in the target_assembly position
+        assembly_path_ = depthFirstZAssembly();   //All parts in the path are in the target_assembly position
+        saveAssemblyPath();
+    }
+
+
+    else
+    {
+        RCLCPP_INFO(logger(), "Loading cached path");
+    }
 
     if (assembly_path_.size() < 2)
     {
@@ -102,6 +187,15 @@ void Assembler::generateAssemblySequence()
 
     base_part_ = assembly_path_[1]->assembly_->getAssembledPartTransforms().begin()->first;  //Set base part
 
+    //TODO
+    //Now that you have the base part, check all other parts and compare their lowest z point to the lowest z point of the base part
+    //For any parts that are below the base part, you need to move all parts together up by the difference plus some offset
+    //Then, create a raft to print the base part on. This can either be exactly the bottom face of the base part or, (easier) just a bounding box
+    //You need some small offest between the top of the raft and the bottom of the base part. You can maybe also use ribs like in the chatgpt discussion
+
+    //REMEMBER that you need to get the part transforms from the assembly map - you can't just use shapegetlowestpoint
+
+
     generateInitialPartPositions(); //Initial part positions are now set here   Sets inital_assembly positions
 
     generateGrasps();
@@ -111,9 +205,6 @@ void Assembler::generateAssemblySequence()
     generateSlicerGcode();  //Uses initial_assembly positions
 
     alignAssemblyPathToInitialAssembly();
-
-    //alignTargetAssemblyToInitialAssembly();
-
 
 
     debugState();
@@ -239,6 +330,9 @@ void Assembler::generateCommandFile(std::vector<size_t> part_addition_order)
         designate_part_command["command-properties"]["part-pick-pos-y"] = pick_position.Y();
         designate_part_command["command-properties"]["part-place-pos-x"] = place_position.X();
         designate_part_command["command-properties"]["part-place-pos-y"] = place_position.Y();
+        designate_part_command["command-properties"]["grasp-pos-x"] = part->getVacuumGrasp().X();
+        designate_part_command["command-properties"]["grasp-pos-y"] = part->getVacuumGrasp().Y();
+        designate_part_command["command-properties"]["grasp-pos-z"] = part->getVacuumGrasp().Z();
 
         commands.push_back(designate_part_command);
     }
@@ -637,6 +731,13 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::depthFirstZAssembly()
         std::shared_ptr<AssemblyNode> current_node = stack.top();
         stack.pop();
 
+        RCLCPP_INFO(logger(), "New node. Assembled parts:");
+
+        for (auto part_position : current_node->assembly_->getAssembledPartTransforms())
+        {
+            RCLCPP_INFO(logger(), "Name %s, ID %ld, type %d", part_position.first->getName().c_str(), part_position.first->getId(), part_position.first->getType());
+        }
+
         // Target condition: no assembled parts remaining
         if (current_node->assembly_->getAssembledPartTransforms().empty())
         {
@@ -938,8 +1039,8 @@ void Assembler::generateGrasps()
 
         if (part->getType() == Part::INTERNAL)
         {
-            RCLCPP_INFO(logger(), "Internal type: %d", Part::INTERNAL);
-            part->setPPGGrasp(PPGGraspGenerator::generate(part));
+            //RCLCPP_INFO(logger(), "Internal type: %d", Part::INTERNAL);
+            //part->setPPGGrasp(PPGGraspGenerator::generate(part));
         }
 
         if (part->getType() == Part::EXTERNAL)

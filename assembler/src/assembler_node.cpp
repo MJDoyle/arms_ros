@@ -12,6 +12,8 @@
 
 #include "assembler_msgs/action/process_model.hpp"
 
+#include <filesystem>
+
 #include <geometry_msgs/msg/point.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <webots_ros2_msgs/srv/spawn_node_from_string.hpp>
@@ -203,6 +205,8 @@ private:
     RCLCPP_INFO(this->get_logger(), "Begin process model");
 
     std::shared_ptr<Assembly> target_assembly = ModelLoader::loadModel(goal->model_file);
+
+    assembler_->setName(std::filesystem::path(goal->model_file).stem().string());
 
     assembler_->setTargetAssembly(target_assembly);
 

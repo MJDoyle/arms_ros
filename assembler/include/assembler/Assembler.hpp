@@ -27,7 +27,13 @@ public:
 
     std::shared_ptr<Assembly> getInitialAssembly() { return initial_assembly_; }
 
+    void setName(std::string name) { name_ = name; }
+
 private:
+
+    void saveAssemblyPath();
+
+    bool loadAssemblyPath();
 
     void initialisePartBays();
 
@@ -81,6 +87,8 @@ private:
     std::vector<std::string> slicer_gcode_;
 
     std::vector<std::vector<bool>> bay_occupancy_;
+
+    std::string name_;
 
 };
 

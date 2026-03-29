@@ -119,8 +119,13 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
         float tip_intersection;
     };
 
+
+
     //TODO this will only accept flat surfaces - it won't handle bumpy surfaces very well
     TopoDS_Shape shape = *(part->getShape());
+
+    RCLCPP_INFO(logger(), "Check0.1");
+
     double nozzle_height = 20;
     double nozzle_tip_height = 0.5; 
     double nozzle_radius = 4.2;
@@ -128,35 +133,55 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
     TopoDS_Shape nozzle = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_height);
     double nozzle_volume = ShapeVolume(nozzle);
     double nozzle_tip_volume = ShapeVolume(nozzle_tip);
+
+
+
     gp_Pnt shape_com = ShapeCenterOfMass(shape);
+
+    RCLCPP_INFO(logger(), "Check0.2");
+
     gp_Pnt shape_centroid = ShapeCentroid(shape);
 
     std::vector<CandidateGrasp> candidate_grasps;
 
     bool grasp_found = false;
 
+    RCLCPP_INFO(logger(), "Check1");
+
     //TODO you should first order faces by their closest point to CoM, and start with those first (and find the best point on each face then compare)
     for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next())
     {
         TopoDS_Face face = TopoDS::Face(exp.Current());
 
+        RCLCPP_INFO(logger(), "Check2");
+
         gp_Dir normal = outwardFaceNormal(face);
+
+        RCLCPP_INFO(logger(), "Check3");
 
         //Ignore faces that are not planar
         if (!BRep_Tool::Surface(face)->IsKind(STANDARD_TYPE(Geom_Plane)))
             continue;
 
+        RCLCPP_INFO(logger(), "Check4");
+
         //Ignore faces with a not vertical normal
         if (normal.Angle(UPWARDS) > 0.05)
             continue;
+
+        RCLCPP_INFO(logger(), "Check5");
 
         //Ignore faces that are too small
         if (faceArea(face) < 50)
             continue;
 
+        RCLCPP_INFO(logger(), "Check6");
+
         Handle(Geom_Plane) gpln = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(face));
         gp_Pln plane = gpln->Pln();
         
+        RCLCPP_INFO(logger(), "Check7");
+
         double largest_face_axis = std::max(ShapeAxisSize(face, 0), ShapeAxisSize(face, 1));  //TODO
 
         gp_Pnt starting_point = ClosestPointOnFace(face, shape_centroid);
@@ -167,18 +192,18 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
         RCLCPP_INFO(logger(), "Checking face of area %f and centroid %f, %f and highest point %f", faceArea(face), face_centroid.X(), face_centroid.Y(), face_highest_point);
 
-        RCLCPP_INFO(logger(), "Closest point to CoM: %f, %f", starting_point.X(), starting_point.Y());
+        //RCLCPP_INFO(logger(), "Closest point to CoM: %f, %f", starting_point.X(), starting_point.Y());
 
         double nozzle_z = face_highest_point + 0.5 * nozzle_height;
         double nozzle_tip_z = face_highest_point - 0.5 * nozzle_tip_height;
 
-        RCLCPP_INFO(logger(), "Nozzle CoM z position %f and tip CoM z position %f", nozzle_z, nozzle_tip_z);
+        //RCLCPP_INFO(logger(), "Nozzle CoM z position %f and tip CoM z position %f", nozzle_z, nozzle_tip_z);
 
         //TODO rework so it's nicer - also if a grasp can't be found on the first pass then try iteratively with smaller dr and dth
         for (double r = 0; r < largest_face_axis; r += 0.5)
         {
 
-            RCLCPP_INFO(logger(), "Trying radius of %f", r);            
+            //RCLCPP_INFO(logger(), "Trying radius of %f", r);            
 
             //Iterate over angle
             for (int th = 0; th < 360; th += 45)
@@ -217,7 +242,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
                 if (nozzle_intersection_ratio > 0.0001)
                 {   
-                    RCLCPP_INFO(logger(), "FAILED nozzle intersection %f", nozzle_intersection_ratio);
+                    //RCLCPP_INFO(logger(), "FAILED nozzle intersection %f", nozzle_intersection_ratio);
                     continue;
                 }
 
@@ -248,7 +273,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
                 if (nozzle_tip_intersection.IsNull())
                 {
-                    RCLCPP_INFO(logger(), "FAILED null nozzle tip intersection");
+                    //RCLCPP_INFO(logger(), "FAILED null nozzle tip intersection");
                     continue;
                 }
 
@@ -256,7 +281,7 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
                 if (nozzle_tip_intersection_ratio < 0.99)
                 {   
-                    RCLCPP_INFO(logger(), "FAILED nozzle tip intersection %f", nozzle_tip_intersection_ratio);
+                    //RCLCPP_INFO(logger(), "FAILED nozzle tip intersection %f", nozzle_tip_intersection_ratio);
                     continue;
                 }
                 gp_Vec com_delta = gp_Vec(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), 0);
