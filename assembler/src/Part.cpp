@@ -15,6 +15,22 @@
     First check the bounding boxes of the two parts to see if they intersect. If they do, use an OCC function
     to check the closest distance between them
 */
+double Part::collisionVolume(std::shared_ptr<Part> otherPart)
+{
+    Bnd_Box this_bb = ShapeBoundingBox(*shape_);
+    Bnd_Box other_bb = ShapeBoundingBox(*(otherPart->getShape()));
+
+    if (this_bb.IsOut(other_bb))
+        return 0.0;
+
+    TopoDS_Shape intersection = ShapeIntersection(*shape_, *(otherPart->getShape()));
+
+    if (intersection.IsNull())
+        return 0.0;
+
+    return ShapeVolume(intersection);
+}
+
 bool Part::collide(std::shared_ptr<Part> otherPart)
 {
     float collisionThreshold = 0.01;                                

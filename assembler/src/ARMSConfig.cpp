@@ -11,23 +11,23 @@ const double PARTS_BED_HEIGHT = 0;
 //                                                  {gp_Pnt(517.4, 50.8, 0),
 //                                                   gp_Pnt(517.4, 120.8, 0)}};
 
-const std::vector<std::vector<gp_Pnt>> PARTS_BAY_POSITIONS = {{gp_Pnt(331.13, 119.0, 0),
+const std::vector<std::vector<gp_Pnt>> PARTS_BAY_POSITIONS = {{gp_Pnt(331.13, 119.0, 0),    //40mm
                                                                gp_Pnt(376.21, 119.26, 0), 
                                                                gp_Pnt(421.29, 119.52, 0), 
                                                                gp_Pnt(511.45, 120.04, 0),
                                                                gp_Pnt(556.53, 120.3, 0),
-                                                               gp_Pnt(0, 0, 0),             //TODO NEW PARTS BAYS
-                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(376.21, 164.26, 0),             //TODO NEW PARTS BAYS
+                                                               gp_Pnt(421.29, 164.52, 0), 
                                                                gp_Pnt(0, 0, 0), 
                                                                gp_Pnt(0, 0, 0),
                                                                gp_Pnt(0, 0, 0)},
 
-                                                              {gp_Pnt(341.33, 64.5, 0),
+                                                              {gp_Pnt(341.33, 64.5, 0), //60mm
                                                                gp_Pnt(406.36, 64.86, 0),
                                                                gp_Pnt(471.39, 65.23, 0),
                                                                gp_Pnt(536.43, 65.6, 0),
-                                                               gp_Pnt(0, 0, 0),             //TODO NEW PARTS BAYS
-                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(386.83, 230.10, 0),             //TODO NEW PARTS BAYS
+                                                               gp_Pnt(451.43, 229.90, 0),
                                                                gp_Pnt(0, 0, 0),
                                                                gp_Pnt(0, 0, 0)}};
 

@@ -29,6 +29,10 @@ public:
 
     void setName(std::string name) { name_ = name; }
 
+    void setGenerateGrasps(bool v) { generate_grasps_ = v; }
+    void setGenerateJigs(bool v) { generate_jigs_ = v; }
+    void setCollisionVolumeThreshold(double v) { collision_volume_threshold_ = v; }
+
 private:
 
     void saveAssemblyPath();
@@ -89,6 +93,10 @@ private:
     std::vector<std::vector<bool>> bay_occupancy_;
 
     std::string name_;
+
+    bool generate_grasps_ = true;
+    bool generate_jigs_ = true;
+    double collision_volume_threshold_ = 0.0;
 
 };
 

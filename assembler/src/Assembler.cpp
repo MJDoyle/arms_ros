@@ -198,9 +198,11 @@ void Assembler::generateAssemblySequence()
 
     generateInitialPartPositions(); //Initial part positions are now set here   Sets inital_assembly positions
 
-    generateGrasps();
+    if (generate_grasps_)
+        generateGrasps();
 
-    generateNegatives();
+    if (generate_jigs_)
+        generateNegatives();
 
     generateSlicerGcode();  //Uses initial_assembly positions
 
@@ -469,14 +471,26 @@ void Assembler::alignAssemblyPathToInitialAssembly()
     for (std::shared_ptr<AssemblyNode> node : assembly_path_)
     {
         //Unassembled parts get set to initial positions
-        for (auto const& [part, transform] : node->assembly_->getUnassembledPartTransforms())  
+        for (auto const& [part, transform] : node->assembly_->getUnassembledPartTransforms())
         {
             node->assembly_->setUnassembledPart(part, initial_assembly_->getUnassembledPartTransforms()[part]);
         }
 
-        for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms()) 
+        for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms())
         {
             node->assembly_->setAssembledPart(part, transform.Translated(delta));
+        }
+    }
+
+    // Sync target_assembly_ with the translated positions from the last path node.
+    // When loading from cache, assembly_path_.back() is a fresh Assembly (not target_assembly_),
+    // so target_assembly_ must be updated explicitly. When the DFS generated the path,
+    // assembly_path_.back()->assembly_ IS target_assembly_, so this is a no-op.
+    if (!assembly_path_.empty() && assembly_path_.back()->assembly_ != target_assembly_)
+    {
+        for (auto const& [part, transform] : assembly_path_.back()->assembly_->getAssembledPartTransforms())
+        {
+            target_assembly_->setAssembledPart(part, transform);
         }
     }
 }
@@ -717,6 +731,22 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::depthFirstZAssembly()
     base_node->assembly_ = target_assembly_;
     base_node->id_ = nodeIdGenerator(target_assembly_->getAssembledPartIds());
 
+    // Compute assembly center (centroid of all assembled part positions in the target assembly)
+    gp_Pnt assembly_center(0, 0, 0);
+    {
+        auto target_transforms = target_assembly_->getAssembledPartTransforms();
+        if (!target_transforms.empty()) {
+            double sum_x = 0, sum_y = 0, sum_z = 0;
+            for (auto const& [p, t] : target_transforms) {
+                sum_x += t.X();
+                sum_y += t.Y();
+                sum_z += t.Z();
+            }
+            int n = target_transforms.size();
+            assembly_center = gp_Pnt(sum_x / n, sum_y / n, sum_z / n);
+        }
+    }
+
     // DFS uses a stack (LIFO)
     std::stack<std::shared_ptr<AssemblyNode>> stack;
 
@@ -747,9 +777,26 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::depthFirstZAssembly()
 
         std::vector<std::shared_ptr<AssemblyNode>> neighbours = findNodeNeighbours(current_node);
 
-        // Optional: reverse to mimic a deterministic "first neighbour" order
-        // if you care about which DFS path you get.
-        // std::reverse(neighbours.begin(), neighbours.end());
+        // Precompute the distance of each neighbour's newly-unassembled part from the assembly center
+        auto get_unassembled_distance = [&](const std::shared_ptr<AssemblyNode>& neighbour) -> double {
+            auto current_assembled = current_node->assembly_->getAssembledPartTransforms();
+            auto neighbour_assembled = neighbour->assembly_->getAssembledPartTransforms();
+            for (auto const& [part, transform] : current_assembled) {
+                if (neighbour_assembled.count(part) == 0) {
+                    double dx = transform.X() - assembly_center.X();
+                    double dy = transform.Y() - assembly_center.Y();
+                    double dz = transform.Z() - assembly_center.Z();
+                    return std::sqrt(dx*dx + dy*dy + dz*dz);
+                }
+            }
+            return 0.0;
+        };
+
+        // Sort ascending so the furthest part ends up pushed last (on top of LIFO stack, explored first)
+        std::sort(neighbours.begin(), neighbours.end(),
+            [&](const std::shared_ptr<AssemblyNode>& a, const std::shared_ptr<AssemblyNode>& b) {
+                return get_unassembled_distance(a) < get_unassembled_distance(b);
+            });
 
         for (const std::shared_ptr<AssemblyNode>& neighbour : neighbours)
         {
@@ -887,6 +934,10 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::sh
             if (part->getType() == Part::SCREW)
                 break;
 
+            // Pushfit parts can always be extracted without collision
+            if (part->isPushfit())
+                break;
+
             part->translate(gp_Vec(0, 0, step_size));
 
             step_distance += step_size;
@@ -897,7 +948,7 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::sh
                 if (other_part->getId() == part->getId())
                     continue;
 
-                if (part->collide(other_part))
+                if (part->collisionVolume(other_part) > collision_volume_threshold_)
                 {
                     collides = true;
                     break;
@@ -1035,6 +1086,9 @@ void Assembler::generateGrasps()
 {
     for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms()) //No unassembled parts in target assembly
     {
+        if (!rclcpp::ok())
+            return;
+
         RCLCPP_INFO(logger(), "Part type: %d", part->getType());
 
         if (part->getType() == Part::INTERNAL)

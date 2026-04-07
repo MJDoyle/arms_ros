@@ -208,6 +208,10 @@ private:
 
     assembler_->setName(std::filesystem::path(goal->model_file).stem().string());
 
+    assembler_->setGenerateGrasps(goal->generate_grasps);
+    assembler_->setGenerateJigs(goal->generate_jigs);
+    assembler_->setCollisionVolumeThreshold(goal->collision_volume_threshold);
+
     assembler_->setTargetAssembly(target_assembly);
 
     assembler_->generateAssemblySequence();

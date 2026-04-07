@@ -1,6 +1,8 @@
 string model_file
 string substrate_file
-# Put additional options in here later
+bool generate_grasps
+bool generate_jigs
+float64 collision_volume_threshold
 ---
 bool success
 AssemblyStep[] steps

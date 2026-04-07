@@ -184,9 +184,11 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
         double largest_face_axis = std::max(ShapeAxisSize(face, 0), ShapeAxisSize(face, 1));  //TODO
 
-        gp_Pnt starting_point = ClosestPointOnFace(face, shape_centroid);
+        //gp_Pnt starting_point = ClosestPointOnFace(face, shape_centroid);
 
         gp_Pnt face_centroid = ShapeCentroid(face);
+
+        gp_Pnt starting_point = face_centroid;
 
         Standard_Real face_highest_point = ShapeHighestPoint(face);
 
@@ -337,8 +339,8 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
     
     if (candidate_grasps.size() == 0)
     {
-        RCLCPP_FATAL(logger(), "No vacuum grasp found");
-        rclcpp::shutdown();
+        RCLCPP_WARN(logger(), "No vacuum grasp found");
+        //rclcpp::shutdown();
         return gp_Pnt();
     }
 

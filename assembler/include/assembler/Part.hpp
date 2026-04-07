@@ -24,6 +24,8 @@ public:
 
     bool collide(std::shared_ptr<Part> otherPart);
 
+    double collisionVolume(std::shared_ptr<Part> otherPart);
+
     void setCentroidPosition(gp_Pnt position) {shape_ = std::make_shared<TopoDS_Shape>(ShapeSetCentroid(*shape_, position));}
 
     gp_Pnt generateBayPosition(std::vector<std::vector<bool>>& occupancy);
@@ -46,6 +48,7 @@ public:
     PART_TYPE                       getType()               { return type_; }
     size_t                          getId()                 { return id_; }
     std::string                     getName()               { return name_; }
+    bool                            isPushfit()             { return name_.find("pushfit") != std::string::npos; }
     std::shared_ptr<TopoDS_Shape>   getShape()              { return shape_; }
 
     int                             getBayIndex()           { return bay_index_; }
