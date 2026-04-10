@@ -242,9 +242,9 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
                     
                 }
 
-                if (nozzle_intersection_ratio > 0.0001)
+                if (nozzle_intersection_ratio > 0.002)
                 {   
-                    //RCLCPP_INFO(logger(), "FAILED nozzle intersection %f", nozzle_intersection_ratio);
+                    RCLCPP_INFO(logger(), "FAILED nozzle intersection %f", nozzle_intersection_ratio);
                     continue;
                 }
 
@@ -275,15 +275,15 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
 
                 if (nozzle_tip_intersection.IsNull())
                 {
-                    //RCLCPP_INFO(logger(), "FAILED null nozzle tip intersection");
+                    RCLCPP_INFO(logger(), "FAILED null nozzle tip intersection");
                     continue;
                 }
 
                 double nozzle_tip_intersection_ratio = ShapeVolume(nozzle_tip_intersection) / nozzle_tip_volume;
 
-                if (nozzle_tip_intersection_ratio < 0.99)
+                if (nozzle_tip_intersection_ratio < 0.95)
                 {   
-                    //RCLCPP_INFO(logger(), "FAILED nozzle tip intersection %f", nozzle_tip_intersection_ratio);
+                    RCLCPP_INFO(logger(), "FAILED nozzle tip intersection %f", nozzle_tip_intersection_ratio);
                     continue;
                 }
                 gp_Vec com_delta = gp_Vec(nozzle_x - shape_com.X(), nozzle_y - shape_com.Y(), 0);

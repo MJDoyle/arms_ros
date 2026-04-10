@@ -398,7 +398,7 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
 
     // Scale
     const double largest_shape_axis = std::max(ShapeAxisSize(convex_shape, 0), ShapeAxisSize(convex_shape, 1));
-    const float scaling_distance = 0.6f;
+    const float scaling_distance = 0.4f;
     const float scaling_factor = float((largest_shape_axis + scaling_distance) / largest_shape_axis);
   
     TopoDS_Shape scaled_convex_shape = UniformScaleShape(convex_shape, scaling_factor);
@@ -428,7 +428,7 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
   
     int i = -1;
     for (float z = ShapeLowestPoint(shape_) - (JIG_HEIGHT * 0.5f + 1.0f);
-         z < ShapeLowestPoint(shape_);
+         z < ShapeLowestPoint(shape_) + JIG_HEIGHT * 0.5f - 1.0f;
          z += 1.0f)
     {
       i++;
@@ -493,6 +493,41 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
   
       jig_part_z_offset = float(ShapeCentroid(shape_).Z() - ShapeCentroid(jig).Z());
       final_jig = jig;
+
+      // Stop if no downward-facing faces of the part remain above the current jig top.
+      // There's no geometry left to capture by stepping higher.
+      const double downward_normal_threshold = 0.1; // min |z| for a face to count as downward-facing
+      Standard_Real jig_top = ShapeHighestPoint(jig);
+      bool any_downward_face_above_jig = false;
+      for (TopExp_Explorer fexp(shape_, TopAbs_FACE); fexp.More(); fexp.Next())
+      {
+        const TopoDS_Face face = TopoDS::Face(fexp.Current());
+        if (face.IsNull())
+          continue;
+        try
+        {
+          Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
+          if (surf.IsNull() || !surf->IsKind(STANDARD_TYPE(Geom_Plane)))
+            continue;
+          gp_Dir normal = outwardFaceNormal(face);
+          if (normal.Z() > -downward_normal_threshold)
+            continue;
+          if (ShapeCentroid(face).Z() > jig_top)
+          {
+            any_downward_face_above_jig = true;
+            break;
+          }
+        }
+        catch (Standard_Failure&)
+        {
+          continue;
+        }
+      }
+      if (!any_downward_face_above_jig)
+      {
+        RCLCPP_INFO(logger(), "No downward-facing part faces above jig top (%.3f mm), stopping early", jig_top);
+        break;
+      }
     }
   
     if (final_jig.IsNull())

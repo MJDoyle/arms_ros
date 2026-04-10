@@ -20,6 +20,18 @@ const std::vector<std::vector<gp_Pnt>> PARTS_BAY_POSITIONS = {{gp_Pnt(331.13, 11
                                                                gp_Pnt(421.29, 164.52, 0), 
                                                                gp_Pnt(0, 0, 0), 
                                                                gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0),
+                                                               gp_Pnt(0, 0, 0), 
+                                                               gp_Pnt(0, 0, 0),
                                                                gp_Pnt(0, 0, 0)},
 
                                                               {gp_Pnt(341.33, 64.5, 0), //60mm
@@ -42,7 +54,7 @@ const double PRINT_BED_CENTER[2] = {0, 0};
 
 const double PRINT_BED_BOTTOM_LEFT[2] = {50, 120};
 
-const double PRINT_BED_TOP_RIGHT[2] = {230, 250};
+const double PRINT_BED_TOP_RIGHT[2] = {230, 280};
 
 const double PRINT_MIN_SPACING = 20;
 
