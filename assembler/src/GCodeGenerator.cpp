@@ -37,7 +37,7 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
 
             gp_Vec place_position = SumPoints(target_assembly->getAssembledPartTransforms()[part], part->getVacuumGrasp());
 
-            gcode.push_back(";PLACE EXTERNAL PART COMMAND");
+            gcode.push_back(";PLACE EXTERNAL PART COMMAND " + part->getName());
 
             moveToSafeHeight(gcode);
 
@@ -99,6 +99,8 @@ void GCodeGenerator::generate(std::shared_ptr<Assembly> initial_assembly, std::s
             moveToSafeHeight(gcode, 2000);
         }      
     }
+
+    toolDropoff(gcode);
 
     std::ofstream fout(OUTPUT_DIR + "gcode.gcode");
 

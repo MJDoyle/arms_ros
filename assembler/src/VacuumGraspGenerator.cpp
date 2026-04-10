@@ -127,9 +127,9 @@ gp_Pnt VacuumGraspGenerator::generate(std::shared_ptr<Part> part)
     RCLCPP_INFO(logger(), "Check0.1");
 
     double nozzle_height = 20;
-    double nozzle_tip_height = 0.5; 
+    double nozzle_tip_height = 0.5;
     double nozzle_radius = 4.2;
-    TopoDS_Shape nozzle_tip = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_tip_height);
+    TopoDS_Shape nozzle_tip = BRepPrimAPI_MakeCylinder(nozzle_radius - 1, nozzle_tip_height);
     TopoDS_Shape nozzle = BRepPrimAPI_MakeCylinder(nozzle_radius, nozzle_height);
     double nozzle_volume = ShapeVolume(nozzle);
     double nozzle_tip_volume = ShapeVolume(nozzle_tip);
