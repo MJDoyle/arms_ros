@@ -535,7 +535,20 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
       RCLCPP_ERROR(logger(), "Final jig is null. Aborting STL export.");
       return 0.0f;
     }
-  
+
+    // Translate the final jig so its centroid z = JIG_CENTER_Z.
+    // This ensures every jig STL is saved at the same known z in world space,
+    // making the Foxglove marker position consistent (all at z=JIG_CENTER_Z).
+    // jig_part_z_offset = part_z - jig_z_before_shift, so
+    //   part_bay_z = JIG_CENTER_Z + jig_part_z_offset  (computed in generateNegatives)
+    // correctly places the part at the same relative height above the jig.
+    {
+      gp_Pnt jig_centroid = ShapeCentroid(final_jig);
+      final_jig = ShapeSetCentroid(
+          final_jig,
+          gp_Pnt(jig_centroid.X(), jig_centroid.Y(), JIG_CENTER_Z));
+    }
+
     // Mesh + export final
     BRepMesh_IncrementalMesh mesher(final_jig, 0.01);
     mesher.Perform();

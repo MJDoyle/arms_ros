@@ -1,0 +1,5 @@
+int32 stage_index
+---
+bool success
+string message
+int32 num_stages

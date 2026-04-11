@@ -36,6 +36,23 @@ Assembler::Assembler()
     initialisePartBays();
 }
 
+void Assembler::reset()
+{
+    target_assembly_.reset();
+    initial_assembly_.reset();
+    assembly_path_.clear();
+    base_part_.reset();
+    node_id_map_.clear();
+    next_node_ID_ = 0;
+    slicer_gcode_.clear();
+    bay_occupancy_.clear();
+    name_.clear();
+    generate_grasps_ = true;
+    generate_jigs_ = true;
+    collision_volume_threshold_ = 0.0;
+    initialisePartBays();
+}
+
 /*  Initialise the 2D occupancy values for the grid of parts bays - outer vector corresponds to bays of different sizes, inner vector to individual bays
 */
 void Assembler::initialisePartBays()
@@ -1060,11 +1077,18 @@ void Assembler::generateNegatives()
 {
     RCLCPP_INFO(logger(), "Generating external part jigs");
 
+    // Move OCC shapes to their bay XY positions before generating jigs.
+    // Then explicitly set z = JIG_HEIGHT/2 for every external part so all jig
+    // STLs end up with their bottom face at z=0 (consistent across all parts).
+    initial_assembly_->setPartTransforms();
+
     for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms())
     {
         //Only create negatives or external parts
         if (part->getType() != Part::EXTERNAL)
             continue;
+
+        part->setCentroidPosition(gp_Pnt(transform.X(), transform.Y(), JIG_CENTER_Z));
 
         CradleGenerator cradle_gen(part->getName(), *part->getShape());
 

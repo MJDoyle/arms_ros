@@ -26,12 +26,17 @@ public:
     void setTargetAssembly(std::shared_ptr<Assembly> target_assembly) { target_assembly_ = target_assembly; }
 
     std::shared_ptr<Assembly> getInitialAssembly() { return initial_assembly_; }
+    std::shared_ptr<Assembly> getTargetAssembly() { return target_assembly_; }
+    std::vector<std::shared_ptr<AssemblyNode>> getAssemblyPath() { return assembly_path_; }
+    std::string getName() { return name_; }
 
     void setName(std::string name) { name_ = name; }
 
     void setGenerateGrasps(bool v) { generate_grasps_ = v; }
     void setGenerateJigs(bool v) { generate_jigs_ = v; }
     void setCollisionVolumeThreshold(double v) { collision_volume_threshold_ = v; }
+
+    void reset();  // Clear all run-specific state so a new model can be loaded cleanly
 
 private:
 

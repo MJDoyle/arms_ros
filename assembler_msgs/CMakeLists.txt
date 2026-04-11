@@ -28,7 +28,10 @@ endif()
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AssemblyStep.msg"
   "action/ProcessModel.action"
-  DEPENDENCIES ampi_project_interfaces # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
+  "srv/SetStage.srv"
+  "srv/StartPipeline.srv"
+  "srv/ListModels.srv"
+  DEPENDENCIES ampi_project_interfaces
 )
 
 ament_package()
