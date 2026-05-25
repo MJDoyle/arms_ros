@@ -25,6 +25,7 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
   const [generateGrasps, setGenerateGrasps] = useState(true);
   const [generateJigs, setGenerateJigs] = useState(true);
   const [collisionThreshold, setCollisionThreshold] = useState(0);
+  const [cradleScalingDistance, setCradleScalingDistance] = useState(0.2);
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>(["Waiting for assembler..."]);
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
@@ -99,6 +100,7 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
         generate_grasps: generateGrasps,
         generate_jigs: generateJigs,
         collision_volume_threshold: collisionThreshold,
+        cradle_scaling_distance: cradleScalingDistance,
       })) as StartPipelineResponse;
 
       if (!response.accepted) {
@@ -109,7 +111,7 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
       setLog((prev) => [...prev, `Error: ${String(e)}`]);
       setRunning(false);
     }
-  }, [context, selectedModel, generateGrasps, generateJigs, collisionThreshold]);
+  }, [context, selectedModel, generateGrasps, generateJigs, collisionThreshold, cradleScalingDistance]);
 
   return (
     <div style={{ padding: 12, fontFamily: "sans-serif", userSelect: "none", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -169,6 +171,17 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
         min={0}
         value={collisionThreshold}
         onChange={(e) => { setCollisionThreshold(parseFloat(e.target.value) || 0); }}
+        disabled={running}
+        style={{ ...inputStyle, width: 120 }}
+      />
+
+      <label style={labelStyle}>Cradle scaling distance (mm)</label>
+      <input
+        type="number"
+        min={0}
+        step={0.05}
+        value={cradleScalingDistance}
+        onChange={(e) => { setCradleScalingDistance(parseFloat(e.target.value) || 0); }}
         disabled={running}
         style={{ ...inputStyle, width: 120 }}
       />

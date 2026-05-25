@@ -1090,7 +1090,7 @@ void Assembler::generateNegatives()
 
         part->setCentroidPosition(gp_Pnt(transform.X(), transform.Y(), JIG_CENTER_Z));
 
-        CradleGenerator cradle_gen(part->getName(), *part->getShape());
+        CradleGenerator cradle_gen(part->getName(), *part->getShape(), cradle_scaling_distance_);
 
         float part_jig_z_offset = cradle_gen.createSimpleNegative(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex());
 

@@ -19,6 +19,10 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BOPAlgo_Options.hxx>
 
+#include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <GeomAbs_CurveType.hxx>
+
 
 #include "assembler/CradleGenerator.hpp"
 
@@ -343,9 +347,30 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
     RCLCPP_INFO(logger(), "Shape: %s", name_.c_str());
   
     gp_Pnt shape_position = ShapeCentroid(shape_);
-    TopoDS_Shape jigBlock = BRepPrimAPI_MakeBox(shape_position, bay_size, bay_size, JIG_HEIGHT);
+    TopoDS_Shape jigBlock = BRepPrimAPI_MakeBox(shape_position, bay_size + 0.3f, bay_size + 0.3f, JIG_HEIGHT);
     jigBlock = ShapeSetCentroid(jigBlock, gp_Pnt(shape_position.X(), shape_position.Y(), shape_position.Z()));
-  
+
+    // Round the 4 vertical (Z-axis) external corners with a 5 mm fillet
+    {
+        BRepFilletAPI_MakeFillet fillet(jigBlock);
+        for (TopExp_Explorer ex(jigBlock, TopAbs_EDGE); ex.More(); ex.Next())
+        {
+            const TopoDS_Edge& edge = TopoDS::Edge(ex.Current());
+            BRepAdaptor_Curve curve(edge);
+            if (curve.GetType() == GeomAbs_Line)
+            {
+                gp_Dir dir = curve.Line().Direction();
+                if (std::abs(dir.Dot(gp_Dir(0, 0, 1))) > 0.99)
+                    fillet.Add(5.0, edge);
+            }
+        }
+        fillet.Build();
+        if (fillet.IsDone())
+            jigBlock = fillet.Shape();
+        else
+            RCLCPP_WARN(logger(), "Jig block corner fillet failed, using sharp corners");
+    }
+
     // Notch
     TopoDS_Shape notch = BRepPrimAPI_MakeCylinder(3, 4);
     notch = ShapeSetCentroid(notch,
@@ -398,7 +423,7 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
 
     // Scale
     const double largest_shape_axis = std::max(ShapeAxisSize(convex_shape, 0), ShapeAxisSize(convex_shape, 1));
-    const float scaling_distance = 0.4f;
+    const float scaling_distance = scaling_distance_;
     const float scaling_factor = float((largest_shape_axis + scaling_distance) / largest_shape_axis);
   
     TopoDS_Shape scaled_convex_shape = UniformScaleShape(convex_shape, scaling_factor);
@@ -425,7 +450,12 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
   
     TopoDS_Shape final_jig = jigBlock;
     float jig_part_z_offset = 0.0f;
-  
+
+    // Pre-compute shape centroid z — used as the shallowest-viable-jig stopping criterion.
+    // Once the jig top reaches the part's centre of mass, it captures enough geometry for
+    // lateral stability; stepping higher only makes the jig unnecessarily deep.
+    const double shape_centroid_z = ShapeCentroid(shape_).Z();
+
     int i = -1;
     for (float z = ShapeLowestPoint(shape_) - (JIG_HEIGHT * 0.5f + 1.0f);
          z < ShapeLowestPoint(shape_) + JIG_HEIGHT * 0.5f - 1.0f;
@@ -494,9 +524,21 @@ float CradleGenerator::createSimpleNegative(float bay_size, int bay_index)
       jig_part_z_offset = float(ShapeCentroid(shape_).Z() - ShapeCentroid(jig).Z());
       final_jig = jig;
 
+      // Primary early-stop: once the jig top reaches the part's centre of mass the jig
+      // already supports everything below it — no need to go deeper.
+      {
+        const Standard_Real jig_top_centroid_check = ShapeHighestPoint(jig);
+        if (jig_top_centroid_check >= shape_centroid_z)
+        {
+          RCLCPP_INFO(logger(), "Jig top (%.3f) reached part centroid (%.3f) — shallowest viable jig found at step %d",
+                      jig_top_centroid_check, shape_centroid_z, i);
+          break;
+        }
+      }
+
       // Stop if no downward-facing faces of the part remain above the current jig top.
       // There's no geometry left to capture by stepping higher.
-      const double downward_normal_threshold = 0.1; // min |z| for a face to count as downward-facing
+      const double downward_normal_threshold = 0.5; // min |z| for a face to count as downward-facing
       Standard_Real jig_top = ShapeHighestPoint(jig);
       bool any_downward_face_above_jig = false;
       for (TopExp_Explorer fexp(shape_, TopAbs_FACE); fexp.More(); fexp.Next())

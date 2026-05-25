@@ -11,7 +11,8 @@ class CradleGenerator
 {
     public:
 
-    CradleGenerator(std::string name, TopoDS_Shape shape) : shape_(shape), name_(name) {}
+    CradleGenerator(std::string name, TopoDS_Shape shape, float scaling_distance = 0.2f)
+        : shape_(shape), name_(name), scaling_distance_(scaling_distance) {}
 
     float createSimpleNegative(float bay_size, int bay_index);
 
@@ -30,6 +31,8 @@ class CradleGenerator
     TopoDS_Shape shape_;
 
     std::string name_;
+
+    float scaling_distance_;
 };
 
 

@@ -2,6 +2,7 @@ string model_file
 bool generate_grasps
 bool generate_jigs
 float64 collision_volume_threshold
+float64 cradle_scaling_distance
 ---
 bool accepted
 string message
