@@ -7,7 +7,6 @@
 #include "assembler/Assembler.hpp"
 #include "assembler/Assembly.hpp"
 #include "assembler/ModelLoader.hpp"
-#include "assembler/WebotsSpawner.hpp"
 #include "assembler/Part.hpp"
 #include "assembler/ARMSConfig.hpp"
 
@@ -24,8 +23,6 @@
 #include <geometry_msgs/msg/vector3.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <visualization_msgs/msg/marker.hpp>
-#include <webots_ros2_msgs/srv/spawn_node_from_string.hpp>
-
 #include <atomic>
 #include <sstream>
 #include <iostream>
@@ -41,21 +38,6 @@ public:
       const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
       : Node("assembler_action_server", options), assembler_(std::make_shared<Assembler>()) {
     RCLCPP_INFO(this->get_logger(), "Model loader node starting...");
-
-    // Create client for supervisor spawn service
-    supervisor_spawn_client_ = this->create_client<webots_ros2_msgs::srv::SpawnNodeFromString>(
-        "/Ros2Supervisor/spawn_node_from_string");
-
-    // Wait for service to be available with a timeout
-    if (!supervisor_spawn_client_->wait_for_service(std::chrono::seconds(10))) {
-      RCLCPP_WARN(this->get_logger(),
-          "Supervisor spawn service not available. Spawning will be disabled.");
-      supervisor_available_ = false;
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Connected to supervisor spawn service");
-      supervisor_available_ = true;
-      spawn_test_cube();
-    }
 
     // Visualization publishers
     parts_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -90,7 +72,7 @@ public:
 
     // ListModels service — scans the models directory for .step files
     this->declare_parameter<std::string>("models_directory",
-        "/home/md/dev/arms_ros2_ws/input_models");
+        std::string(ARMS_WORKSPACE_ROOT) + "/input_models");
     list_models_service_ = this->create_service<assembler_msgs::srv::ListModels>(
         "/assembler/list_models",
         [this](const std::shared_ptr<assembler_msgs::srv::ListModels::Request> /*request*/,
@@ -530,76 +512,6 @@ private:
     response->message = "Published stage " + std::to_string(idx);
   }
 
-  // ── Webots helpers (unchanged) ──────────────────────────────────────────
-
-  std::string sanitize(const std::string& in) {
-      std::string out = in;
-      for (char& c : out) {
-          if (!std::isalnum(c)) c = '_';
-      }
-      return out;
-  }
-
-  void spawn_test_cube() {}
-
-  void webots_spawn_initial_assembly(std::shared_ptr<Assembly> assembly)
-  {
-    std::map<std::shared_ptr<Part>, gp_Pnt> unassembled_part_transforms = assembly->getUnassembledPartTransforms();
-    int i = 0;
-    for (auto const& [part, position] : unassembled_part_transforms)
-    {
-        webots_spawn_part(part, i);
-        i++;
-    }
-  }
-
-  void webots_spawn_part(const std::shared_ptr<Part> part, int index)
-  {
-    std::stringstream ss;
-    ss << "/tmp/part_" << index << ".stl";
-    part->saveShape(ss.str());
-
-    std::string name = part->getName();
-    std::string vrml =
-    "DEF " + sanitize(name) + std::to_string(index) + " Solid {\n"
-    "  name \"" + sanitize(name) + std::to_string(index) + "\"\n"
-    "  translation 0 0 0.05\n"
-    "  children [\n"
-    "    Transform {\n"
-    "      scale 0.001 0.001 0.001\n"
-    "      children [\n"
-    "        Shape {\n"
-    "          castShadows FALSE\n"
-    "          appearance PBRAppearance {\n"
-    "            baseColor 0.2 0.6 0.8\n"
-    "          }\n"
-    "          geometry Mesh {\n"
-    "            url \"part_" + std::to_string(index) + ".stl\"\n"
-    "          }\n"
-    "        }\n"
-    "      ]\n"
-    "    }\n"
-    "  ]\n"
-    "  boundingObject NULL\n"
-    "  physics NULL\n"
-    "}\n";
-
-    using Service = webots_ros2_msgs::srv::SpawnNodeFromString;
-    auto request = std::make_shared<webots_ros2_msgs::srv::SpawnNodeFromString::Request>();
-    request->data = vrml;
-
-    supervisor_spawn_client_->async_send_request(
-      request,
-      [this, name](rclcpp::Client<Service>::SharedFuture future) {
-        auto result = future.get();
-        if (result->success)
-          RCLCPP_INFO_STREAM(this->get_logger(), "Successfully spawned part '" << name << "'");
-        else
-          RCLCPP_ERROR_STREAM(this->get_logger(), "Failed to spawn part '" << name << "'");
-      }
-    );
-  }
-
   // ── Pipeline (shared by action server and StartPipeline service) ────────
 
   void publish_status(const std::string& text)
@@ -687,8 +599,6 @@ private:
     publish_grasps();
     publish_jigs();
     publish_stage(0);
-
-    webots_spawn_initial_assembly(assembler_->getInitialAssembly());
 
     pipeline_running_.store(false);
     publish_status("Done.");
@@ -780,7 +690,6 @@ private:
   std::shared_ptr<Assembler> assembler_;
 
   rclcpp_action::Server<assembler_msgs::action::ProcessModel>::SharedPtr process_model_action_server_;
-  rclcpp::Client<webots_ros2_msgs::srv::SpawnNodeFromString>::SharedPtr supervisor_spawn_client_;
   rclcpp::Service<assembler_msgs::srv::SetStage>::SharedPtr set_stage_service_;
 
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr parts_pub_;
@@ -795,8 +704,6 @@ private:
 
   std::atomic<bool> pipeline_running_{false};
   int run_index_{0};
-
-  bool supervisor_available_{false};
 
   // part id → absolute path of pre-saved STL
   std::map<size_t, std::string> part_stl_cache_;

@@ -7,14 +7,11 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(ament_cmake REQUIRED)
-find_package(ament_index_cpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(assembler_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(OpenCASCADE REQUIRED)
-find_package(webots_ros2_msgs REQUIRED)
-
 add_compile_options(-Wno-deprecated-declarations) #supress OCCT iterator deprecations
 
 #set(CMAKE_PREFIX_PATH "/usr/local" ${CMAKE_PREFIX_PATH})
@@ -48,13 +45,14 @@ target_link_libraries(assembler_node
   #${CGAL_INCLUDE_DIRS}
 #  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 #  $<INSTALL_INTERFACE:include>)
+get_filename_component(ARMS_WORKSPACE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 target_compile_definitions(assembler_node
-  PRIVATE "CUSTOM_ACTION_CPP_BUILDING_DLL")
+  PRIVATE "CUSTOM_ACTION_CPP_BUILDING_DLL"
+  PRIVATE "ARMS_WORKSPACE_ROOT=\"${ARMS_WORKSPACE_ROOT}\"")
 ament_target_dependencies(assembler_node
   assembler_msgs
   sensor_msgs
   visualization_msgs
-  webots_ros2_msgs
   rclcpp
   rclcpp_action
   rclcpp_components)

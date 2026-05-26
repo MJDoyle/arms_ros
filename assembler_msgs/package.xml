@@ -7,8 +7,6 @@
   <maintainer email="damian.crosby@manchester.ac.uk">mcjssdcc</maintainer>
   <license>Apache-2.0</license>
 
-  <depend>ampi_project_interfaces</depend>
-
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
   <member_of_group>rosidl_interface_packages</member_of_group>

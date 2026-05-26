@@ -7,7 +7,6 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(ampi_project_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -26,12 +25,10 @@ if(BUILD_TESTING)
 endif()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/AssemblyStep.msg"
   "action/ProcessModel.action"
   "srv/SetStage.srv"
   "srv/StartPipeline.srv"
   "srv/ListModels.srv"
-  DEPENDENCIES ampi_project_interfaces
 )
 
 ament_package()
