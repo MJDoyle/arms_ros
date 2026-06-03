@@ -3,6 +3,10 @@
 #include "assembler/Assembly.hpp"
 
 #include "assembler/CradleGenerator.hpp"
+#include "assembler/AdvancedCradleGenerator.hpp"
+#include "assembler/TestCradleGenerator.hpp"
+#include "assembler/SparseCradleGenerator.hpp"
+#include "assembler/JigGenerator.hpp"
 
 #include "assembler/Part.hpp"
 
@@ -143,7 +147,7 @@ bool Assembler::loadAssemblyPath()
 
 /*  The main assembler function. Generates grasps and cradles for each part as appropriate, determines the correct order of assembly, and produces a .yaml command file to be sent to ARMS
 */
-void Assembler::generateAssemblySequence() 
+void Assembler::generateAssemblySequence()
 {
     RCLCPP_INFO(logger(), "Starting assembler analysis");
 
@@ -151,6 +155,23 @@ void Assembler::generateAssemblySequence()
     {
         RCLCPP_FATAL(logger(), "No target assembly");
         rclcpp::shutdown();
+        return;
+    }
+
+    generateInitialAssembly();
+
+    // Jig/grasp-only mode: skip path planning and all path-dependent steps
+    if (!generate_path_)
+    {
+        RCLCPP_INFO(logger(), "Path planning disabled — running jig/grasp generation only");
+        generateInitialPartPositions();
+
+        if (generate_grasps_)
+            generateGrasps();
+
+        if (generate_jigs_)
+            generateNegatives();
+
         return;
     }
 
@@ -162,8 +183,6 @@ void Assembler::generateAssemblySequence()
         return;
     }
 
-    generateInitialAssembly();  //Initial part positions not set here
-
     if (!loadAssemblyPath()) {
 
         RCLCPP_INFO(logger(), "No cached path found, creating new one");
@@ -173,7 +192,6 @@ void Assembler::generateAssemblySequence()
         saveAssemblyPath();
     }
 
-
     else
     {
         RCLCPP_INFO(logger(), "Loading cached path");
@@ -181,7 +199,7 @@ void Assembler::generateAssemblySequence()
 
     if (assembly_path_.size() < 2)
     {
-        RCLCPP_WARN(logger(), "Only one assembly state found");
+        RCLCPP_WARN(logger(), "Assembly path has fewer than 2 nodes — skipping path-dependent steps");
         return;
     }
 
@@ -190,15 +208,13 @@ void Assembler::generateAssemblySequence()
 
     if (assembly_path_[1]->assembly_->getAssembledPartTransforms().size() != 1)
     {
-        RCLCPP_FATAL(logger(), "Second assembly node doesn't have one assembled part");
-        rclcpp::shutdown();
+        RCLCPP_WARN(logger(), "Second assembly node doesn't have exactly one assembled part — skipping path-dependent steps");
         return;
     }
 
     if (assembly_path_[1]->assembly_->getAssembledPartTransforms().begin()->first->getType() != Part::PART_TYPE::INTERNAL)
     {
-        RCLCPP_FATAL(logger(), "Second assembly node part isn't internal");
-        rclcpp::shutdown();
+        RCLCPP_WARN(logger(), "Second assembly node part isn't internal — skipping path-dependent steps");
         return;
     }
 
@@ -1090,9 +1106,9 @@ void Assembler::generateNegatives()
 
         part->setCentroidPosition(gp_Pnt(transform.X(), transform.Y(), JIG_CENTER_Z));
 
-        CradleGenerator cradle_gen(part->getName(), *part->getShape(), cradle_scaling_distance_);
+        JigGenerator cradle_gen(part->getName(), *part->getShape(), cradle_scaling_distance_);
 
-        float part_jig_z_offset = cradle_gen.createSimpleNegative(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex());
+        float part_jig_z_offset = cradle_gen.createJig(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex());
 
         RCLCPP_INFO(logger(), "Jig z offset: %f", part_jig_z_offset);
 

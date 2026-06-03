@@ -34,6 +34,7 @@ public:
 
     void setGenerateGrasps(bool v) { generate_grasps_ = v; }
     void setGenerateJigs(bool v) { generate_jigs_ = v; }
+    void setGeneratePath(bool v) { generate_path_ = v; }
     void setCollisionVolumeThreshold(double v) { collision_volume_threshold_ = v; }
     void setCradleScalingDistance(float v) { cradle_scaling_distance_ = v; }
 
@@ -102,6 +103,7 @@ private:
 
     bool generate_grasps_ = true;
     bool generate_jigs_ = true;
+    bool generate_path_ = true;
     double collision_volume_threshold_ = 0.0;
     float cradle_scaling_distance_ = 0.2f;
 

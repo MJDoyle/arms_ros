@@ -24,6 +24,7 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
   const [selectedModel, setSelectedModel] = useState("");
   const [generateGrasps, setGenerateGrasps] = useState(true);
   const [generateJigs, setGenerateJigs] = useState(true);
+  const [generatePath, setGeneratePath] = useState(true);
   const [collisionThreshold, setCollisionThreshold] = useState(0);
   const [cradleScalingDistance, setCradleScalingDistance] = useState(0.2);
   const [running, setRunning] = useState(false);
@@ -99,6 +100,7 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
         model_file: selectedModel,
         generate_grasps: generateGrasps,
         generate_jigs: generateJigs,
+        generate_path: generatePath,
         collision_volume_threshold: collisionThreshold,
         cradle_scaling_distance: cradleScalingDistance,
       })) as StartPipelineResponse;
@@ -111,7 +113,7 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
       setLog((prev) => [...prev, `Error: ${String(e)}`]);
       setRunning(false);
     }
-  }, [context, selectedModel, generateGrasps, generateJigs, collisionThreshold, cradleScalingDistance]);
+  }, [context, selectedModel, generateGrasps, generateJigs, generatePath, collisionThreshold, cradleScalingDistance]);
 
   return (
     <div style={{ padding: 12, fontFamily: "sans-serif", userSelect: "none", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -145,6 +147,15 @@ function PipelineControlPanel({ context }: { context: PanelExtensionContext }): 
 
       {/* Options */}
       <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
+        <label style={checkStyle}>
+          <input
+            type="checkbox"
+            checked={generatePath}
+            disabled={running}
+            onChange={(e) => { setGeneratePath(e.target.checked); }}
+          />
+          {" "}Plan assembly path
+        </label>
         <label style={checkStyle}>
           <input
             type="checkbox"

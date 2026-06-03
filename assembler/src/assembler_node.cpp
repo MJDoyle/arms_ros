@@ -568,6 +568,7 @@ private:
   void run_pipeline(const std::string& model_file,
                     bool generate_grasps,
                     bool generate_jigs,
+                    bool generate_path,
                     double collision_volume_threshold,
                     float cradle_scaling_distance = 0.2f)
   {
@@ -586,6 +587,7 @@ private:
     assembler_->setName(std::filesystem::path(model_file).stem().string());
     assembler_->setGenerateGrasps(generate_grasps);
     assembler_->setGenerateJigs(generate_jigs);
+    assembler_->setGeneratePath(generate_path);
     assembler_->setCollisionVolumeThreshold(collision_volume_threshold);
     assembler_->setCradleScalingDistance(cradle_scaling_distance);
     assembler_->setTargetAssembly(target_assembly);
@@ -629,10 +631,11 @@ private:
                  model_file = request->model_file,
                  generate_grasps = request->generate_grasps,
                  generate_jigs = request->generate_jigs,
+                 generate_path = request->generate_path,
                  threshold = request->collision_volume_threshold,
                  scaling_distance = static_cast<float>(request->cradle_scaling_distance)]() {
       try {
-        run_pipeline(model_file, generate_grasps, generate_jigs, threshold, scaling_distance);
+        run_pipeline(model_file, generate_grasps, generate_jigs, generate_path, threshold, scaling_distance);
       } catch (const std::exception& e) {
         pipeline_running_.store(false);
         publish_status(std::string("Error: ") + e.what());
@@ -673,7 +676,8 @@ private:
 
     try {
       run_pipeline(goal->model_file, goal->generate_grasps,
-                   goal->generate_jigs, goal->collision_volume_threshold,
+                   goal->generate_jigs, /*generate_path=*/true,
+                   goal->collision_volume_threshold,
                    static_cast<float>(this->get_parameter("cradle_scaling_distance").as_double()));
     } catch (const std::exception& e) {
       pipeline_running_.store(false);
