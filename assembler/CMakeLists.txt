@@ -12,6 +12,7 @@ find_package(assembler_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(OpenCASCADE REQUIRED)
+find_package(coal REQUIRED)
 add_compile_options(-Wno-deprecated-declarations) #supress OCCT iterator deprecations
 
 #set(CMAKE_PREFIX_PATH "/usr/local" ${CMAKE_PREFIX_PATH})
@@ -27,6 +28,7 @@ add_compile_options(-Wno-deprecated-declarations) #supress OCCT iterator depreca
 
 add_library(assembler_node SHARED
   src/assembler_node.cpp src/ModelLoader.cpp src/Assembler.cpp src/Assembly.cpp src/Part.cpp src/GCodeGenerator.cpp src/CradleGenerator.cpp src/AdvancedCradleGenerator.cpp src/TestCradleGenerator.cpp src/SparseCradleGenerator.cpp src/JigGenerator.cpp src/PPGGraspGenerator.cpp src/VacuumGraspGenerator.cpp src/RaftGenerator.cpp src/MeshFunctions.cpp src/ARMSConfig.cpp src/Config.cpp
+  src/Tessellator.cpp src/SceneModel.cpp src/CoalAdapter.cpp
   include/assembler/quickhull/QuickHull.cpp)
 
 target_include_directories(assembler_node PRIVATE
@@ -40,6 +42,7 @@ target_link_libraries(assembler_node
   #${CGAL_LIBRARIES}
   ${OpenCASCADE_LIBRARIES}
   yaml-cpp::yaml-cpp
+  coal::coal
 )
 #target_include_directories(assembler_node PRIVATE
   #${CGAL_INCLUDE_DIRS}

@@ -1,8 +1,8 @@
 #ifndef PART_HPP
 #define PART_HPP
 
+#include "assembler/MeshAsset.hpp"
 #include "assembler/MeshFunctions.hpp"
-
 #include "assembler/PPGGraspGenerator.hpp"
 
 class Part
@@ -41,6 +41,9 @@ public:
     gp_Pnt                          getVacuumGrasp()        { return vacuum_grasp_position_; }
     PPGGrasp                        getPPGGrasp()           { return ppg_grasp_; }
 
+    void                            set_mesh_asset(std::shared_ptr<MeshAsset> m) { mesh_asset_ = m; }
+    std::shared_ptr<MeshAsset>      get_mesh_asset() const  { return mesh_asset_; }
+
     gp_Pnt                          getCoM()                { return ShapeCenterOfMass(*shape_); }  //TODO maybe get rid of this, only in PPGGraspGenerator
     // gp_Pnt                          getCentroid()           { return ShapeCentroid(*shape_); }
     // Standard_Real                   getHighestPoint()       { return ShapeHighestPoint(*shape_); }
@@ -53,12 +56,16 @@ public:
 
     int                             getBayIndex()           { return bay_index_; }
     int                             getBaySizeIndex()       { return bay_size_index_; }
+    bool                            hasBayAssigned() const  { return has_bay_assigned_; }
+    gp_Pnt                          getBayPosition() const  { return bay_position_; }
 
 private:
 
     //TopoDS_Shape GenerateGripperPlate(gp_Dir normal, gp_Pnt center);
 
     std::shared_ptr<TopoDS_Shape> shape_;
+
+    std::shared_ptr<MeshAsset> mesh_asset_;
 
     PART_TYPE type_;
 
@@ -73,6 +80,9 @@ private:
     int bay_index_;
 
     int bay_size_index_;
+
+    bool has_bay_assigned_ = false;
+    gp_Pnt bay_position_;
 };
 
 #endif

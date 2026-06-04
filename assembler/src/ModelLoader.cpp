@@ -1,10 +1,10 @@
 #include "assembler/ModelLoader.hpp"
 
 #include "assembler/Part.hpp"
-
 #include "assembler/Assembly.hpp"
-
 #include "assembler/Logger.hpp"
+#include "assembler/Tessellator.hpp"
+#include "assembler/ARMSConfig.hpp"
 
 
 int ModelLoader::next_id_ = 0;
@@ -135,8 +135,15 @@ void ModelLoader::RecurrentAddPart(const TDF_Label& currentShape, const Handle(X
         }
     }
 
-    if (shapeType != Part::NONE)
-        parts.push_back(std::shared_ptr<Part>(new Part(std::make_shared<TopoDS_Shape>(shape), shapeType, next_id_++, shapeName)));
+    if (shapeType != Part::NONE) {
+        auto part = std::make_shared<Part>(std::make_shared<TopoDS_Shape>(shape), shapeType, next_id_++, shapeName);
+        part->set_mesh_asset(Tessellator::tessellate(shape, MESH_DEFLECTION_MM));
+        RCLCPP_INFO(logger(), "Tessellated part '%s': %zu verts, %zu tris",
+                    shapeName.c_str(),
+                    part->get_mesh_asset()->vertices.size(),
+                    part->get_mesh_asset()->triangles.size());
+        parts.push_back(part);
+    }
 
     shapeTool->GetComponents(currentShape, childShapes);
 

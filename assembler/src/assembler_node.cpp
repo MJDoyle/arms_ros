@@ -9,6 +9,10 @@
 #include "assembler/ModelLoader.hpp"
 #include "assembler/Part.hpp"
 #include "assembler/ARMSConfig.hpp"
+#include "assembler/MeshAsset.hpp"
+#include "assembler/VacuumGraspGenerator.hpp"
+
+#include "yaml-cpp/yaml.h"
 
 #include "assembler_msgs/action/process_model.hpp"
 #include "assembler_msgs/srv/set_stage.hpp"
@@ -24,12 +28,50 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <atomic>
+#include <cmath>
 #include <sstream>
 #include <iostream>
 #include <thread>
 #include <chrono>
 
 #include "assembler/visibility_control.h"
+
+// Write a MeshAsset (vertices in metres) to an ASCII STL, scaling to mm so the
+// existing marker scale=0.001 and mm-based pose code in make_mesh_marker remain
+// unchanged (invariant 2: same mesh asset, different serialisation path).
+static void write_mesh_as_stl(const MeshAsset& mesh, const std::string& path)
+{
+    std::ofstream f(path);
+    if (!f) return;
+
+    f << "solid mesh\n";
+    f << std::fixed;
+
+    for (const auto& tri : mesh.triangles) {
+        const auto& v0 = mesh.vertices[tri[0]];
+        const auto& v1 = mesh.vertices[tri[1]];
+        const auto& v2 = mesh.vertices[tri[2]];
+
+        // Face normal from cross product (unit normal not required by STL spec)
+        double ax = v1[0]-v0[0], ay = v1[1]-v0[1], az = v1[2]-v0[2];
+        double bx = v2[0]-v0[0], by = v2[1]-v0[1], bz = v2[2]-v0[2];
+        double nx = ay*bz - az*by;
+        double ny = az*bx - ax*bz;
+        double nz = ax*by - ay*bx;
+        double len = std::sqrt(nx*nx + ny*ny + nz*nz);
+        if (len > 1e-15) { nx/=len; ny/=len; nz/=len; }
+
+        f << "  facet normal " << nx << " " << ny << " " << nz << "\n"
+          << "    outer loop\n"
+          << "      vertex " << v0[0]*1000.0 << " " << v0[1]*1000.0 << " " << v0[2]*1000.0 << "\n"
+          << "      vertex " << v1[0]*1000.0 << " " << v1[1]*1000.0 << " " << v1[2]*1000.0 << "\n"
+          << "      vertex " << v2[0]*1000.0 << " " << v2[1]*1000.0 << " " << v2[2]*1000.0 << "\n"
+          << "    endloop\n"
+          << "  endfacet\n";
+    }
+
+    f << "endsolid mesh\n";
+}
 
 class AssemblerNode : public rclcpp::Node {
 public:
@@ -46,6 +88,8 @@ public:
         "/assembler/assembly_stage", rclcpp::QoS(1).transient_local());
     grasps_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
         "/assembler/grasps", rclcpp::QoS(1).transient_local());
+    grasp_debug_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
+        "/assembler/grasp_debug", rclcpp::QoS(1).transient_local());
     jigs_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
         "/assembler/jigs", rclcpp::QoS(1).transient_local());
     background_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -55,6 +99,11 @@ public:
 
     // Cradle jig scaling distance (mm) — sets how much larger than the part the cradle cutout is
     this->declare_parameter<double>("cradle_scaling_distance", 0.2);
+
+    // Tool config: YAML file listing all tools + the name of the active one.
+    this->declare_parameter<std::string>("tools_config_file",
+        std::string(ARMS_WORKSPACE_ROOT) + "/arms_model/tools.yaml");
+    this->declare_parameter<std::string>("active_tool", "vacuum_tool");
 
     // Background models parameter: list of "path/to/model.stl,r,g,b" strings
     this->declare_parameter<std::vector<std::string>>("background_models", std::vector<std::string>{});
@@ -136,11 +185,19 @@ private:
     if (!target) return;
     for (auto const& [part, transform] : target->getAssembledPartTransforms())
     {
-      // Save a zero-centred copy so the marker pose is the sole source of positioning
       std::string path = "assembler_working/vis_run_" + std::to_string(run_index_)
                        + "_part_" + std::to_string(part->getId()) + ".stl";
-      TopoDS_Shape centred = ShapeSetCentroid(*part->getShape(), gp_Pnt(0, 0, 0));
-      SaveShapeAsSTL(centred, path);
+
+      auto mesh = part->get_mesh_asset();
+      if (mesh && !mesh->triangles.empty()) {
+        // Reuse the shared tessellation — no re-mesh per consumer (invariant 2).
+        write_mesh_as_stl(*mesh, path);
+      } else {
+        // Fallback for any part that didn't get a mesh asset at load time.
+        TopoDS_Shape centred = ShapeSetCentroid(*part->getShape(), gp_Pnt(0, 0, 0));
+        SaveShapeAsSTL(centred, path);
+      }
+
       part_stl_cache_[part->getId()] = std::filesystem::absolute(path).string();
     }
     RCLCPP_INFO(this->get_logger(), "Cached %zu part STLs", part_stl_cache_.size());
@@ -271,7 +328,7 @@ private:
 
       gp_Pnt grasp = part->getVacuumGrasp();  // relative to part centroid
 
-      // Assembled position — orange
+      // Assembled position — orange cylinder
       arr.markers.push_back(make_grasp_cylinder(
           "grasps_assembled", id++,
           assembled_transform.X() + grasp.X(),
@@ -280,7 +337,19 @@ private:
           grasp_radius, grasp_height,
           1.0, 0.5, 0.0));
 
-      // Unassembled (bay) position — cyan
+      // Nozzle mesh at assembled position — grey, semi-transparent.
+      // The nozzle STL local frame has min-z at -10 mm (contact face),
+      // so the marker origin sits 10 mm above the grasp contact point.
+      if (!nozzle_stl_path_.empty()) {
+        arr.markers.push_back(make_mesh_marker(
+            "nozzle_assembled", id++, nozzle_stl_path_,
+            assembled_transform.X() + grasp.X(),
+            assembled_transform.Y() + grasp.Y(),
+            assembled_transform.Z() + grasp.Z() + 10.0,
+            0.7, 0.7, 0.7, 0.6));
+      }
+
+      // Unassembled (bay) position — cyan cylinder + nozzle mesh
       auto it = unassembled_transforms.find(part);
       if (it != unassembled_transforms.end())
       {
@@ -292,10 +361,20 @@ private:
             bay.Z() + grasp.Z(),
             grasp_radius, grasp_height,
             0.0, 0.9, 0.9));
+
+        if (!nozzle_stl_path_.empty()) {
+          arr.markers.push_back(make_mesh_marker(
+              "nozzle_unassembled", id++, nozzle_stl_path_,
+              bay.X() + grasp.X(),
+              bay.Y() + grasp.Y(),
+              bay.Z() + grasp.Z() + 10.0,
+              0.5, 0.8, 0.8, 0.6));
+        }
       }
     }
     grasps_pub_->publish(arr);
-    RCLCPP_INFO(this->get_logger(), "Published %zu grasp markers", arr.markers.size());
+    RCLCPP_INFO(this->get_logger(), "Published %zu grasp markers (incl. nozzle meshes)",
+                arr.markers.size());
   }
 
   // Publish jig STLs, positioned at each part's bay centre from PARTS_BAY_POSITIONS.
@@ -512,6 +591,122 @@ private:
     response->message = "Published stage " + std::to_string(idx);
   }
 
+  // Publish every attempted nozzle position from debugGrasps() as small spheres.
+  // Colours: red=body collision, orange=assembly collision, yellow=seal failed, green=accepted.
+  void publish_grasp_debug()
+  {
+    auto attempts = assembler_->debugGrasps();
+
+    visualization_msgs::msg::MarkerArray arr;
+
+    // Single DELETEALL to clear previous run's markers.
+    {
+      visualization_msgs::msg::Marker del;
+      del.header.frame_id = "world";
+      del.header.stamp = this->now();
+      del.ns = "grasp_debug";
+      del.action = visualization_msgs::msg::Marker::DELETEALL;
+      arr.markers.push_back(del);
+    }
+
+    int id = 0;
+    for (const auto& a : attempts)
+    {
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "world";
+      m.header.stamp = this->now();
+      m.ns = "grasp_debug";
+      m.id = id++;
+      m.type = visualization_msgs::msg::Marker::SPHERE;
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.pose.position.x = a.x_mm * 0.001;
+      m.pose.position.y = a.y_mm * 0.001;
+      m.pose.position.z = a.z_mm * 0.001;
+      m.pose.orientation.w = 1.0;
+      m.scale.x = m.scale.y = m.scale.z = 0.003;  // 3 mm diameter sphere
+      m.color.a = 0.8;
+      switch (a.status) {
+        case GraspAttempt::Status::body_collision:
+          m.color.r = 1.0; m.color.g = 0.1; m.color.b = 0.1; break;   // red
+        case GraspAttempt::Status::assembly_collision:
+          m.color.r = 1.0; m.color.g = 0.5; m.color.b = 0.0; break;   // orange
+        case GraspAttempt::Status::seal_failed:
+          m.color.r = 1.0; m.color.g = 1.0; m.color.b = 0.0; break;   // yellow
+        case GraspAttempt::Status::accepted:
+          m.color.r = 0.1; m.color.g = 0.9; m.color.b = 0.1; break;   // green
+      }
+      arr.markers.push_back(m);
+    }
+
+    grasp_debug_pub_->publish(arr);
+    RCLCPP_INFO(this->get_logger(),
+                "Published %zu grasp debug markers (%zu attempts)",
+                arr.markers.size() - 1, attempts.size());
+  }
+
+  // ── Tool config loader ───────────────────────────────────────────────────
+
+  // Load the named tool entry from the YAML config file.
+  // Mesh file paths that are relative are resolved against the directory
+  // containing the config file.  Returns a default-constructed ToolConfig
+  // (empty mesh_file, zero offsets) if the tool or file cannot be found.
+  ToolConfig load_tool_config(const std::string& config_file,
+                              const std::string& tool_name)
+  {
+    ToolConfig cfg;
+    cfg.name = tool_name;
+
+    if (!std::filesystem::exists(config_file)) {
+      RCLCPP_WARN(this->get_logger(),
+                  "tools_config_file not found: '%s'", config_file.c_str());
+      return cfg;
+    }
+
+    YAML::Node root;
+    try { root = YAML::LoadFile(config_file); }
+    catch (const std::exception& e) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Failed to parse tools config '%s': %s", config_file.c_str(), e.what());
+      return cfg;
+    }
+
+    if (!root["tools"] || !root["tools"].IsSequence()) {
+      RCLCPP_WARN(this->get_logger(),
+                  "tools_config '%s': expected a 'tools' sequence", config_file.c_str());
+      return cfg;
+    }
+
+    const auto config_dir = std::filesystem::path(config_file).parent_path();
+
+    for (const auto& entry : root["tools"]) {
+      if (!entry["name"] || entry["name"].as<std::string>() != tool_name)
+        continue;
+
+      if (entry["mesh_file"]) {
+        std::filesystem::path p(entry["mesh_file"].as<std::string>());
+        if (p.is_relative()) p = config_dir / p;
+        cfg.mesh_file = p.string();
+      }
+
+      if (entry["offset_mm"] && entry["offset_mm"].IsSequence()
+          && entry["offset_mm"].size() == 3) {
+        cfg.offset_x_mm = entry["offset_mm"][0].as<double>();
+        cfg.offset_y_mm = entry["offset_mm"][1].as<double>();
+        cfg.offset_z_mm = entry["offset_mm"][2].as<double>();
+      }
+
+      RCLCPP_INFO(this->get_logger(),
+                  "Tool '%s' loaded: mesh='%s'  offset=(%.2f, %.2f, %.2f) mm",
+                  cfg.name.c_str(), cfg.mesh_file.c_str(),
+                  cfg.offset_x_mm, cfg.offset_y_mm, cfg.offset_z_mm);
+      return cfg;
+    }
+
+    RCLCPP_WARN(this->get_logger(),
+                "Tool '%s' not found in '%s'", tool_name.c_str(), config_file.c_str());
+    return cfg;
+  }
+
   // ── Pipeline (shared by action server and StartPipeline service) ────────
 
   void publish_status(const std::string& text)
@@ -545,6 +740,8 @@ private:
     make_deleteall("parts",             parts_pub_);
     make_deleteall("grasps_assembled",  grasps_pub_);
     make_deleteall("grasps_unassembled",grasps_pub_);
+    make_deleteall("nozzle_assembled",  grasps_pub_);
+    make_deleteall("nozzle_unassembled",grasps_pub_);
     make_deleteall("jigs",              jigs_pub_);
 
     // Stage publisher uses two namespaces
@@ -590,6 +787,9 @@ private:
     assembler_->setGeneratePath(generate_path);
     assembler_->setCollisionVolumeThreshold(collision_volume_threshold);
     assembler_->setCradleScalingDistance(cradle_scaling_distance);
+    assembler_->setToolConfig(load_tool_config(
+        this->get_parameter("tools_config_file").as_string(),
+        this->get_parameter("active_tool").as_string()));
     assembler_->setTargetAssembly(target_assembly);
 
     publish_status("Generating assembly sequence...");
@@ -597,10 +797,23 @@ private:
 
     publish_status("Caching geometry and publishing visualizations...");
     cache_part_stls();
+
+    // Write nozzle mesh to STL so publish_grasps() can reference it as a mesh marker.
+    nozzle_stl_path_.clear();
+    auto nozzle_mesh = assembler_->getNozzleMesh();
+    if (nozzle_mesh && !nozzle_mesh->triangles.empty()) {
+      std::string nozzle_path = "assembler_working/nozzle_mesh.stl";
+      write_mesh_as_stl(*nozzle_mesh, nozzle_path);
+      nozzle_stl_path_ = std::filesystem::absolute(nozzle_path).string();
+    }
+
     publish_parts();
     publish_grasps();
     publish_jigs();
     publish_stage(0);
+
+    publish_status("Running grasp debug pass...");
+    publish_grasp_debug();
 
     pipeline_running_.store(false);
     publish_status("Done.");
@@ -699,6 +912,7 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr parts_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr stage_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grasps_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grasp_debug_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr jigs_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr background_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pipeline_status_pub_;
@@ -711,6 +925,9 @@ private:
 
   // part id → absolute path of pre-saved STL
   std::map<size_t, std::string> part_stl_cache_;
+
+  // Absolute path of the nozzle mesh STL written for the current pipeline run.
+  std::string nozzle_stl_path_;
 };
 
 RCLCPP_COMPONENTS_REGISTER_NODE(AssemblerNode)

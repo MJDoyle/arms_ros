@@ -1,0 +1,14 @@
+[package]
+title       = "ARMS Assembly Simulator"
+description = "Step-by-step pick-and-place simulation of the ARMS assembly sequence"
+version     = "0.1.0"
+authors     = ["ARMS"]
+category    = "Simulation"
+
+[dependencies]
+"omni.isaac.core"    = {}
+"omni.isaac.kit"     = {}
+"omni.usd"           = {}
+
+[[python.module]]
+name = "arms.assembly.sim"

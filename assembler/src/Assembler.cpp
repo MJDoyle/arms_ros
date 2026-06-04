@@ -1,4 +1,6 @@
 #include "assembler/Assembler.hpp"
+#include "assembler/CoalAdapter.hpp"
+#include "assembler/Tessellator.hpp"
 
 #include "assembler/Assembly.hpp"
 
@@ -11,6 +13,7 @@
 #include "assembler/Part.hpp"
 
 #include "assembler/ARMSConfig.hpp"
+#include "assembler/MeshFunctions.hpp"
 
 #include "yaml-cpp/yaml.h"
 
@@ -24,6 +27,7 @@
 #include <map>
 
 #include <cstdlib>
+#include <limits>
 
 #include "assembler/Part.hpp"
 
@@ -54,6 +58,12 @@ void Assembler::reset()
     generate_grasps_ = true;
     generate_jigs_ = true;
     collision_volume_threshold_ = 0.0;
+    tool_config_ = {};
+    scene_.clear();
+    collision_adapter_.reset();
+    nozzle_mesh_.reset();
+    jig_mesh_cache_.clear();
+    jig_pose_cache_.clear();
     initialisePartBays();
 }
 
@@ -183,19 +193,27 @@ void Assembler::generateAssemblySequence()
         return;
     }
 
-    if (!loadAssemblyPath()) {
+    //if (!loadAssemblyPath()) {
 
         RCLCPP_INFO(logger(), "No cached path found, creating new one");
 
         //assembly_path_ = breadthFirstZAssembly();   //All parts in the path are in the target_assembly position
         assembly_path_ = depthFirstZAssembly();   //All parts in the path are in the target_assembly position
         saveAssemblyPath();
-    }
 
-    else
-    {
-        RCLCPP_INFO(logger(), "Loading cached path");
-    }
+        // Propagate the edge grasps found during DFS onto each part so that
+        // downstream steps (generateCommandFile) can use part->getVacuumGrasp().
+        for (const auto& node : assembly_path_)
+        {
+            if (node->edge_part_ && node->edge_part_->getType() == Part::EXTERNAL)
+                node->edge_part_->setVacuumGrasp(node->edge_grasp_);
+        }
+    //}
+
+    //else
+    //{
+    //    RCLCPP_INFO(logger(), "Loading cached path");
+    //}
 
     if (assembly_path_.size() < 2)
     {
@@ -478,17 +496,23 @@ void Assembler::generateInitialPartPositions()
         return;
     }
 
-    RCLCPP_INFO(logger(), "Generating external part bay positions");
+    // RCLCPP_INFO(logger(), "Setting external part bay positions");
 
-    //External initial part
-    for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms())  //All parts in initial assembly are unassembled
-    {
-        //Only create negatives or external parts
-        if (part->getType() != Part::EXTERNAL)
-            continue;
+    // for (auto const& [part, transform] : initial_assembly_->getUnassembledPartTransforms())
+    // {
+    //     if (part->getType() != Part::EXTERNAL) continue;
 
-        initial_assembly_->setUnassembledPart(part, part->generateBayPosition(bay_occupancy_));
-    }
+    //     if (part->hasBayAssigned())
+    //     {
+    //         // Already assigned by assignExternalBayPositions() — position already
+    //         // set in initial_assembly_, nothing to do.
+    //     }
+    //     else
+    //     {
+            
+    //         initial_assembly_->setUnassembledPart(part, part->generateBayPosition(bay_occupancy_));
+    //     }
+    // }
 }
 
 void Assembler::alignAssemblyPathToInitialAssembly()
@@ -845,8 +869,7 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::depthFirstZAssembly()
     // If we never found a target, or target has no parent (and isn't base) -> fail
     if (!target_node || (target_node != base_node && !parents.count(target_node)))
     {
-        RCLCPP_FATAL(logger(), "No assembly path found (DFS)");
-        rclcpp::shutdown();
+        RCLCPP_WARN(logger(), "No assembly path found (DFS) — check /assembler/grasp_debug markers for rejection reasons");
         return path;
     }
 
@@ -942,6 +965,134 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::breadthFirstZAssembly()
     return path;
 }
 
+// Check whether `part` can be removed (i.e. placed last) in the current DFS
+// node.  All parts in `assembled` have their OCCT shapes at their assembly
+// centroid positions (setPartTransforms was called by the caller).
+//
+// Returns nullopt if infeasible; otherwise the grasp in local frame (mm) —
+// zero for non-external parts.
+std::optional<gp_Pnt> Assembler::edge_feasible(
+    std::shared_ptr<Part> part,
+    const std::map<std::shared_ptr<Part>, gp_Pnt>& assembled)
+{
+    if (part->getType() == Part::SCREW)  return gp_Pnt(0,0,0);
+    if (part->isPushfit())               return gp_Pnt(0,0,0);
+    if (!part->get_mesh_asset())         return gp_Pnt(0,0,0);
+    if (!collision_adapter_)             return gp_Pnt(0,0,0);
+
+    const std::string part_id = part->getName() + "_" + std::to_string(part->getId());
+    const gp_Pnt assembly_centroid = assembled.at(part);  // mm
+
+    // ---- Coal z-step lift (all parts) ----
+    // Lift 1 mm per step × 5 steps; collision at any step → infeasible.
+    const double STEP_MM = 1.0;
+    const int    N_STEPS = 5;
+
+    bool z_ok = true;
+    for (int step = 1; step <= N_STEPS && z_ok; ++step)
+    {
+        gp_Trsf lifted;
+        lifted.SetTranslation(gp_Vec(
+            assembly_centroid.X() * 0.001,
+            assembly_centroid.Y() * 0.001,
+            (assembly_centroid.Z() + step * STEP_MM) * 0.001));
+        collision_adapter_->add_or_update(part_id, part->get_mesh_asset(), lifted);
+
+        for (auto const& [other, _] : assembled)
+        {
+            if (other->getId() == part->getId()) continue;
+            if (!other->get_mesh_asset()) continue;
+            const std::string other_id = other->getName() + "_" + std::to_string(other->getId());
+            if (!collision_adapter_->collision_free(part_id, other_id))
+            {
+                z_ok = false;
+                break;
+            }
+        }
+    }
+
+    // Restore the part to its original assembly pose in the adapter.
+    {
+        gp_Trsf original;
+        original.SetTranslation(gp_Vec(
+            assembly_centroid.X() * 0.001,
+            assembly_centroid.Y() * 0.001,
+            assembly_centroid.Z() * 0.001));
+        collision_adapter_->add_or_update(part_id, part->get_mesh_asset(), original);
+    }
+
+    if (!z_ok) return std::nullopt;
+
+    // Non-external parts: z-step is sufficient.
+    if (part->getType() != Part::EXTERNAL) return gp_Pnt(0, 0, 0);
+    if (!nozzle_mesh_)                     return gp_Pnt(0, 0, 0);
+
+    // ---- Grasp search (external parts) ----
+    // VacuumGraspGenerator checks nozzle vs part body AND vs assembled parts.
+    std::vector<std::string> assembled_ids;
+    assembled_ids.reserve(assembled.size());
+    for (auto const& [other, _] : assembled)
+    {
+        if (other->getId() == part->getId()) continue;
+        assembled_ids.push_back(other->getName() + "_" + std::to_string(other->getId()));
+    }
+
+    auto grasp_opt = VacuumGraspGenerator::generate(
+        part, *collision_adapter_, nozzle_mesh_, assembled_ids);
+
+    if (!grasp_opt) return std::nullopt;
+    const gp_Pnt grasp = *grasp_opt;
+
+    // ---- Jig pick check (external parts with bay assigned) ----
+    if (part->hasBayAssigned())
+    {
+        // Build jig mesh lazily — once per part per planning run.
+        if (!jig_mesh_cache_.count(part->getId()))
+        {
+            gp_Pnt saved_centroid = ShapeCentroid(*part->getShape());
+            gp_Pnt bay_pos = part->getBayPosition();
+            part->setCentroidPosition(gp_Pnt(bay_pos.X(), bay_pos.Y(), JIG_CENTER_Z));
+
+            JigGenerator jig_gen(part->getName(), *part->getShape(), cradle_scaling_distance_);
+            TopoDS_Shape jig_shape = jig_gen.buildJigShape(BAY_SIZES[part->getBaySizeIndex()]);
+
+            gp_Pnt jig_cen = ShapeCentroid(jig_shape);
+            gp_Trsf jp;
+            jp.SetTranslation(gp_Vec(
+                jig_cen.X() * 0.001,
+                jig_cen.Y() * 0.001,
+                jig_cen.Z() * 0.001));
+            jig_mesh_cache_[part->getId()] = Tessellator::tessellate(jig_shape, MESH_DEFLECTION_MM);
+            jig_pose_cache_[part->getId()] = jp;
+
+            part->setCentroidPosition(saved_centroid);
+        }
+
+        // Nozzle at bay pick position — part centroid is at (bay_x, bay_y, JIG_CENTER_Z).
+        constexpr double NOZZLE_H_HALF_MM = 10.0;
+        gp_Pnt bay_pos = part->getBayPosition();
+        gp_Trsf bay_nozzle_pose;
+        bay_nozzle_pose.SetTranslation(gp_Vec(
+            (bay_pos.X() + grasp.X()) * 0.001,
+            (bay_pos.Y() + grasp.Y()) * 0.001,
+            (JIG_CENTER_Z + grasp.Z() + NOZZLE_H_HALF_MM) * 0.001));
+
+        collision_adapter_->add_or_update("__gripper__", nozzle_mesh_, bay_nozzle_pose);
+        collision_adapter_->add_or_update("__jig__",
+                                           jig_mesh_cache_[part->getId()],
+                                           jig_pose_cache_[part->getId()]);
+
+        bool jig_ok = collision_adapter_->collision_free("__gripper__", "__jig__");
+
+        collision_adapter_->remove("__gripper__");
+        collision_adapter_->remove("__jig__");
+
+        if (!jig_ok) return std::nullopt;
+    }
+
+    return grasp;
+}
+
 std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::shared_ptr<AssemblyNode> node)
 {
     // Set each part to its position within the assembly
@@ -949,85 +1100,39 @@ std::vector<std::shared_ptr<AssemblyNode>> Assembler::findNodeNeighbours(std::sh
 
     std::vector<std::shared_ptr<AssemblyNode>> neighbours;
 
-    // //Iterate through each part
-    // //Try to move the part vertically over 10cm
-    // //Every 0.1cm check collisions with every other part
-    // //If no collisions take place, create a new assemblynode with this part removed and add it to neighbours list
-    float step_size = 1.0f;
+    const auto& assembled = node->assembly_->getAssembledPartTransforms();
 
-    for (auto const& [part, transform] : node->assembly_->getAssembledPartTransforms())
+    for (auto const& [part, transform] : assembled)
     {
-        bool collides = false;
-
-        float step_distance = 0;
-
-        for (int num_steps = 0; num_steps <= 5; ++num_steps)
-        {   
-            //TODO for now assume that bolts don't collide. This needs to be handled correctly
-            if (part->getType() == Part::SCREW)
-                break;
-
-            // Pushfit parts can always be extracted without collision
-            if (part->isPushfit())
-                break;
-
-            part->translate(gp_Vec(0, 0, step_size));
-
-            step_distance += step_size;
-
-            for (auto const& [other_part, other_transform] : node->assembly_->getAssembledPartTransforms())
-            {
-                //Don't try to collide with self
-                if (other_part->getId() == part->getId())
-                    continue;
-
-                if (part->collisionVolume(other_part) > collision_volume_threshold_)
-                {
-                    collides = true;
-                    break;
-                }
-            }
-
-            if (collides)
-                break;
-        }
-
-        //Put the part back where it was
-        part->translate(gp_Vec(0, 0, -step_distance));
-
-        if (collides)
+        auto grasp_result = edge_feasible(part, assembled);
+        if (!grasp_result)
             continue;
 
         //Create new assembly node
         std::shared_ptr<Assembly> neighbour_assembly = std::shared_ptr<Assembly>(new Assembly());
-
         std::shared_ptr<AssemblyNode> neighbour_node = std::shared_ptr<AssemblyNode>(new AssemblyNode());
-
 
         for (auto const& [part_to_add, transform_to_add] : node->assembly_->getUnassembledPartTransforms())
         {
             neighbour_assembly->setUnassembledPart(part_to_add, transform_to_add);
         }
 
-
         for (auto const& [part_to_add, transform_to_add] : node->assembly_->getAssembledPartTransforms())
         {
             if (part_to_add->getId() != part->getId())
                 neighbour_assembly->setAssembledPart(part_to_add, transform_to_add);
-
-            //For the remove part, add it to the unassemlbed parts map and set the transform as the transofmr of the part in the initial assembly
             else
-                neighbour_assembly->setUnassembledPart(part_to_add, initial_assembly_->getUnassembledPartTransforms()[part_to_add]);  
-            
+                neighbour_assembly->setUnassembledPart(part_to_add, initial_assembly_->getUnassembledPartTransforms()[part_to_add]);
         }
 
-        neighbour_node->assembly_ = neighbour_assembly;
-
-        neighbour_node->id_ = nodeIdGenerator(neighbour_assembly->getAssembledPartIds());
+        neighbour_node->assembly_   = neighbour_assembly;
+        neighbour_node->id_         = nodeIdGenerator(neighbour_assembly->getAssembledPartIds());
+        // Store the part placed (and its grasp) to reach this neighbour from the current node.
+        neighbour_node->edge_part_  = part;
+        neighbour_node->edge_grasp_ = *grasp_result;
 
         neighbours.push_back(neighbour_node);
-        
-    } 
+    }
 
     return neighbours;
 }
@@ -1084,6 +1189,114 @@ void Assembler::generateInitialAssembly()
     {
         initial_assembly_->setUnassembledPart(part, transform);
     }
+
+    // Pre-assign bay positions for external parts so they are available during DFS.
+    assignExternalBayPositions();
+
+    // Move shapes to their assembly positions — Coal poses and OCCT face queries
+    // inside VacuumGraspGenerator must be consistent during DFS.
+    target_assembly_->setPartTransforms();
+
+    // Tessellate the vacuum nozzle once for use in edge_feasible and generate().
+    // Try to load from the user-supplied STEP file first; fall back to a
+    // 4.2 mm radius × 20 mm cylinder if the file is absent or unreadable.
+    if (!tool_config_.mesh_file.empty()) {
+        STEPControl_Reader reader;
+        if (reader.ReadFile(tool_config_.mesh_file.c_str()) == IFSelect_RetDone) {
+            reader.TransferRoots();
+            TopoDS_Shape shape = reader.OneShape();
+            if (!shape.IsNull()) {
+                nozzle_mesh_ = Tessellator::tessellate(shape, MESH_DEFLECTION_MM);
+                RCLCPP_INFO(logger(), "Nozzle mesh loaded from '%s': %zu verts, %zu tris",
+                            tool_config_.mesh_file.c_str(),
+                            nozzle_mesh_->vertices.size(),
+                            nozzle_mesh_->triangles.size());
+            }
+        }
+        if (!nozzle_mesh_)
+            RCLCPP_WARN(logger(), "Failed to load nozzle mesh from '%s' — using cylinder fallback",
+                        tool_config_.mesh_file.c_str());
+    }
+    if (!nozzle_mesh_) {
+        // Fallback: radius 4.2 mm, height 20 mm, bottom at z=0, centroid at z=10.
+        TopoDS_Shape nozzle_shape =
+            BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0,0,0), gp_Dir(0,0,1)), 4.2, 20.0).Shape();
+        nozzle_mesh_ = Tessellator::tessellate(nozzle_shape, MESH_DEFLECTION_MM);
+    }
+
+    // Align the nozzle mesh so its contact face (min-z vertex) sits at exactly
+    // z = -0.01 m in local frame.  VacuumGraspGenerator and edge_feasible both
+    // place the nozzle origin at face_z + GAP + NOZZLE_H_HALF and expect the
+    // mesh bottom to be 0.01 m below that origin.  The cylinder satisfies this
+    // by construction; loaded STEP geometry may not.
+    {
+        double min_z = std::numeric_limits<double>::max();
+        for (const auto& v : nozzle_mesh_->vertices)
+            min_z = std::min(min_z, v[2]);
+        const double expected_bottom_m = -10.0 * 0.001;
+        const double shift = expected_bottom_m - min_z;
+        if (std::abs(shift) > 1e-6) {
+            for (auto& v : nozzle_mesh_->vertices)
+                v[2] += shift;
+            RCLCPP_INFO(logger(), "Nozzle mesh z-shifted %.2f mm to align contact face",
+                        shift * 1000.0);
+        }
+    }
+
+    // Apply the per-tool XYZ correction from the tool config (mm → m).
+    // This corrects any lateral offset visible when the mesh is displayed in
+    // the visualisation relative to the part geometry.
+    {
+        const double dx = tool_config_.offset_x_mm * 0.001;
+        const double dy = tool_config_.offset_y_mm * 0.001;
+        const double dz = tool_config_.offset_z_mm * 0.001;
+        if (std::abs(dx) > 1e-9 || std::abs(dy) > 1e-9 || std::abs(dz) > 1e-9) {
+            for (auto& v : nozzle_mesh_->vertices) {
+                v[0] += dx;
+                v[1] += dy;
+                v[2] += dz;
+            }
+            RCLCPP_INFO(logger(), "Nozzle mesh offset applied: (%.2f, %.2f, %.2f) mm",
+                        tool_config_.offset_x_mm,
+                        tool_config_.offset_y_mm,
+                        tool_config_.offset_z_mm);
+        }
+    }
+
+    // Build the neutral scene model from the target assembly (all parts present
+    // at their assembled positions).  Poses are in metres (mm * 0.001).
+    scene_.clear();
+    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms())
+    {
+        if (!part->get_mesh_asset()) continue;
+
+        gp_Trsf pose;
+        pose.SetTranslation(gp_Vec(transform.X() * 0.001,
+                                   transform.Y() * 0.001,
+                                   transform.Z() * 0.001));
+
+        const std::string id = part->getName() + "_" + std::to_string(part->getId());
+        scene_.add_object(id, part->get_mesh_asset(), SceneRole::Part, pose, true);
+    }
+
+    const double safety_margin_m = MESH_DEFLECTION_MM * 0.5 * 0.001;
+    collision_adapter_ = std::make_unique<CoalAdapter>(safety_margin_m);
+    collision_adapter_->sync(scene_);
+
+    RCLCPP_INFO(logger(), "SceneModel built with %zu objects (safety margin %.4f mm)",
+                scene_.present_object_ids().size(),
+                safety_margin_m * 1000.0);
+}
+
+void Assembler::assignExternalBayPositions()
+{
+    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms())
+    {
+        if (part->getType() != Part::EXTERNAL) continue;
+        if (!part->hasBayAssigned())
+            initial_assembly_->setUnassembledPart(
+                part, part->generateBayPosition(bay_occupancy_));
+    }
 }
 
 /* Create printable jigs for each external part to fit int he parts bay. Also allocates each external
@@ -1110,37 +1323,82 @@ void Assembler::generateNegatives()
 
         float part_jig_z_offset = cradle_gen.createJig(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex());
 
-        RCLCPP_INFO(logger(), "Jig z offset: %f", part_jig_z_offset);
+        RCLCPP_INFO(logger(), "Jig z offset (height above jig base): %f", part_jig_z_offset);
 
-        RCLCPP_INFO(logger(), "Setting part transform %f %f %f", transform.X(), transform.Y(), JIG_CENTER_Z + part_jig_z_offset);
+        RCLCPP_INFO(logger(), "Setting part transform %f %f %f", transform.X(), transform.Y(), (double)part_jig_z_offset);
 
-
-        initial_assembly_->setUnassembledPart(part, gp_Pnt(transform.X(), transform.Y(), JIG_CENTER_Z + part_jig_z_offset));
+        // part_jig_z_offset is the part centroid height above the jig base plate (Z=0 in
+        // the STL).  The jig base is at Z=0 in world coordinates, so no additional offset
+        // is needed — using JIG_CENTER_Z here would shift parts below the jig.
+        initial_assembly_->setUnassembledPart(part, gp_Pnt(transform.X(), transform.Y(), part_jig_z_offset));
 
     }
 }
 
-/* Generate both vacuum grasps and parallel plate gripper grasps for parts
+/* Generate vacuum grasps for all external parts, using the full assembly as
+   the collision context.  Called in non-path mode (generate_path_=false).
+   In path mode, grasps are found per-edge during DFS and propagated via
+   edge_part_/edge_grasp_ fields on AssemblyNode — this function is skipped.
 */
 void Assembler::generateGrasps()
 {
-    for (auto const& [part, transform] : target_assembly_->getAssembledPartTransforms()) //No unassembled parts in target assembly
+    if (!collision_adapter_ || !nozzle_mesh_) return;
+
+    // Ensure shapes are at assembly positions for consistent Coal / OCCT queries.
+    target_assembly_->setPartTransforms();
+
+    const auto& all_parts = target_assembly_->getAssembledPartTransforms();
+
+    for (auto const& [part, transform] : all_parts)
     {
-        if (!rclcpp::ok())
-            return;
+        if (!rclcpp::ok()) return;
 
-        RCLCPP_INFO(logger(), "Part type: %d", part->getType());
+        if (part->getType() != Part::EXTERNAL) continue;
 
-        if (part->getType() == Part::INTERNAL)
+        // Build scene IDs for every other assembled part.
+        std::vector<std::string> assembled_ids;
+        assembled_ids.reserve(all_parts.size() - 1);
+        for (auto const& [other, _] : all_parts)
         {
-            //RCLCPP_INFO(logger(), "Internal type: %d", Part::INTERNAL);
-            //part->setPPGGrasp(PPGGraspGenerator::generate(part));
+            if (other->getId() == part->getId()) continue;
+            assembled_ids.push_back(other->getName() + "_" + std::to_string(other->getId()));
         }
 
-        if (part->getType() == Part::EXTERNAL)
-        {
-            RCLCPP_INFO(logger(), "External type: %d", Part::EXTERNAL);
-            part->setVacuumGrasp(VacuumGraspGenerator::generate(part));
-        }
+        auto grasp = VacuumGraspGenerator::generate(
+            part, *collision_adapter_, nozzle_mesh_, assembled_ids);
+
+        if (grasp)
+            part->setVacuumGrasp(*grasp);
+        else
+            RCLCPP_WARN(logger(), "generateGrasps: no grasp found for %s",
+                        part->getName().c_str());
     }
+}
+
+std::vector<GraspAttempt> Assembler::debugGrasps()
+{
+    std::vector<GraspAttempt> all_attempts;
+    if (!collision_adapter_ || !nozzle_mesh_ || !target_assembly_) return all_attempts;
+
+    target_assembly_->setPartTransforms();
+
+    const auto& all_parts = target_assembly_->getAssembledPartTransforms();
+
+    for (auto const& [part, transform] : all_parts)
+    {
+        if (part->getType() != Part::EXTERNAL) continue;
+
+        std::vector<std::string> assembled_ids;
+        assembled_ids.reserve(all_parts.size() - 1);
+        for (auto const& [other, _] : all_parts)
+        {
+            if (other->getId() == part->getId()) continue;
+            assembled_ids.push_back(other->getName() + "_" + std::to_string(other->getId()));
+        }
+
+        VacuumGraspGenerator::generate(
+            part, *collision_adapter_, nozzle_mesh_, assembled_ids, &all_attempts);
+    }
+
+    return all_attempts;
 }

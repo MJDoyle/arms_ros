@@ -1,11 +1,17 @@
 #ifndef ASSEMBLER_HPP
 #define ASSEMBLER_HPP
 
+#include "assembler/SceneModel.hpp"
+#include "assembler/CollisionAdapter.hpp"
+#include "assembler/MeshAsset.hpp"
+#include "assembler/VacuumGraspGenerator.hpp"
 
 #include <string>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <map>
+#include <set>
 
 
 class aiScene;
@@ -15,6 +21,19 @@ class Assembly;
 class Part;
 
 class AssemblyNode;
+
+// Describes a vacuum tool: which mesh file to load and an XYZ correction
+// (in mm) applied to mesh vertices after tessellation.  The correction shifts
+// the mesh so the contact face sits at the correct position relative to the
+// part.  Z is usually left at 0 — the loader already aligns the contact face
+// automatically; X/Y correct any lateral offset visible in the visualisation.
+struct ToolConfig {
+    std::string name;
+    std::string mesh_file;       // absolute path to STEP/OBJ/STL
+    double offset_x_mm = 0.0;
+    double offset_y_mm = 0.0;
+    double offset_z_mm = 0.0;
+};
 
 class Assembler {
 
@@ -29,6 +48,7 @@ public:
     std::shared_ptr<Assembly> getTargetAssembly() { return target_assembly_; }
     std::vector<std::shared_ptr<AssemblyNode>> getAssemblyPath() { return assembly_path_; }
     std::string getName() { return name_; }
+    std::shared_ptr<MeshAsset> getNozzleMesh() const { return nozzle_mesh_; }
 
     void setName(std::string name) { name_ = name; }
 
@@ -37,8 +57,14 @@ public:
     void setGeneratePath(bool v) { generate_path_ = v; }
     void setCollisionVolumeThreshold(double v) { collision_volume_threshold_ = v; }
     void setCradleScalingDistance(float v) { cradle_scaling_distance_ = v; }
+    void setToolConfig(const ToolConfig& cfg) { tool_config_ = cfg; }
 
     void reset();  // Clear all run-specific state so a new model can be loaded cleanly
+
+    // Run VacuumGraspGenerator on every external part with the full assembly as
+    // collision context, collecting every attempted nozzle position and its
+    // rejection reason.  Call after generateAssemblySequence() for debug viz.
+    std::vector<GraspAttempt> debugGrasps();
 
 private:
 
@@ -78,11 +104,36 @@ private:
 
     void alignAssemblyPathToInitialAssembly();
 
+    // Pre-assign bay indices and positions for all external parts before DFS.
+    void assignExternalBayPositions();
+
+    // Check whether removing `part` from `assembled` is physically feasible.
+    // Returns nullopt if infeasible; otherwise the grasp position in local frame
+    // (relative to part centroid, mm) — zero for parts without a grasp (internal).
+    // Checks performed:
+    //   - Coal z-step lift (all parts)
+    //   - VacuumGraspGenerator with Coal assembly check (external parts)
+    //   - Gripper-vs-jig pick check (external parts with bay assigned)
+    std::optional<gp_Pnt> edge_feasible(
+        std::shared_ptr<Part> part,
+        const std::map<std::shared_ptr<Part>, gp_Pnt>& assembled);
+
     std::vector<std::shared_ptr<AssemblyNode>> breadthFirstZAssembly();
 
     std::vector<std::shared_ptr<AssemblyNode>> depthFirstZAssembly();
 
     std::vector<std::shared_ptr<AssemblyNode>> findNodeNeighbours(std::shared_ptr<AssemblyNode> node);
+
+    // Neutral scene model and Coal backend.  Built in generateInitialAssembly.
+    SceneModel scene_;
+    std::unique_ptr<CollisionAdapter> collision_adapter_;
+
+    // Tessellated vacuum nozzle mesh (shared across all edge checks).
+    std::shared_ptr<MeshAsset> nozzle_mesh_;
+
+    // Per-part jig mesh and world-pose (metres), built lazily during edge checks.
+    std::map<size_t, std::shared_ptr<MeshAsset>> jig_mesh_cache_;
+    std::map<size_t, gp_Trsf> jig_pose_cache_;
 
     std::shared_ptr<Assembly> initial_assembly_;
 
@@ -106,6 +157,7 @@ private:
     bool generate_path_ = true;
     double collision_volume_threshold_ = 0.0;
     float cradle_scaling_distance_ = 0.2f;
+    ToolConfig tool_config_;
 
 };
 

@@ -90,3 +90,5 @@ const double JIG_HEIGHT = 10;
 
 const double JIG_CENTER_Z = -17.14;
 
+const double MESH_DEFLECTION_MM = 0.1;
+

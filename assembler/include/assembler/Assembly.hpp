@@ -55,7 +55,13 @@ struct AssemblyNode {
 
     std::set<size_t> parent_ids_;
 
-    bool operator <(const AssemblyNode& rhs) const              //TODO this is janky
+    // Part placed to reach this node from its parent (null for the root node).
+    std::shared_ptr<Part> edge_part_;
+    // Grasp for edge_part_ (local frame, relative to centroid, mm).
+    // Zero for parts that don't need a grasp (internal, screws).
+    gp_Pnt edge_grasp_;
+
+    bool operator <(const AssemblyNode& rhs) const
     {
         return id_ < rhs.id_;
     }

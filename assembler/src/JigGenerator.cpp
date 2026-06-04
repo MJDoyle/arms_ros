@@ -127,13 +127,10 @@ static TopoDS_Shape jgCut(const TopoDS_Shape& A, const TopoDS_Shape& B, double f
 }
 
 // ===========================================================================
-// JigGenerator::createJig
+// JigGenerator::buildJigShape  — geometry only, no STL / no JIG_CENTER_Z move
 // ===========================================================================
-float JigGenerator::createJig(float bay_size, int bay_index)
+TopoDS_Shape JigGenerator::buildJigShape(float bay_size)
 {
-    RCLCPP_INFO(logger(), "JigGenerator: %s  bay=%g #%d",
-                name_.c_str(), (double)bay_size, bay_index);
-
     const double z_min = ShapeLowestPoint(shape_);
     const gp_Pnt part_cen = ShapeCentroid(shape_);
     const double cx = part_cen.X(), cy = part_cen.Y();
@@ -152,7 +149,7 @@ float JigGenerator::createJig(float bay_size, int bay_index)
 
     // ---- Base plate ---------------------------------------------------------
     TopoDS_Shape jig = jgMakeRoundedRectSolid(cx, cy, base_bot, bs, CORNER_R, FLOOR_H);
-    if (jig.IsNull()) { RCLCPP_ERROR(logger(), "JigGenerator: base failed"); return 0.0f; }
+    if (jig.IsNull()) { RCLCPP_ERROR(logger(), "JigGenerator: base failed"); return TopoDS_Shape(); }
 
     // ---- Edge-to-face adjacency map -----------------------------------------
     TopTools_IndexedDataMapOfShapeListOfShape e2f;
@@ -424,13 +421,30 @@ float JigGenerator::createJig(float bay_size, int bay_index)
         }
     }
 
-    // ---- Translate to JIG_CENTER_Z and export --------------------------------
+    return jig;
+}
+
+// ===========================================================================
+// JigGenerator::createJig  — build geometry, translate to JIG_CENTER_Z, export
+// ===========================================================================
+float JigGenerator::createJig(float bay_size, int bay_index)
+{
+    RCLCPP_INFO(logger(), "JigGenerator: %s  bay=%g #%d",
+                name_.c_str(), (double)bay_size, bay_index);
+
+    TopoDS_Shape jig = buildJigShape(bay_size);
+
+    // Anchor the jig base plate at Z = 0 so every STL is consistent.
+    // jig_part_z_offset = part centroid height above the jig base plate.
+    // In the ARMS workspace the jig base sits at JIG_CENTER_Z, so the part's
+    // absolute Z = JIG_CENTER_Z + jig_part_z_offset.
+    const double jig_lo = ShapeLowestPoint(jig);
     const float jig_part_z_offset =
-        static_cast<float>(ShapeCentroid(shape_).Z() - ShapeCentroid(jig).Z());
+        static_cast<float>(ShapeCentroid(shape_).Z() - jig_lo);
 
     {
         const gp_Pnt c = ShapeCentroid(jig);
-        jig = ShapeSetCentroid(jig, gp_Pnt(c.X(), c.Y(), JIG_CENTER_Z));
+        jig = ShapeSetCentroid(jig, gp_Pnt(c.X(), c.Y(), c.Z() - jig_lo));
     }
 
     BRepMesh_IncrementalMesh(jig, 0.01).Perform();
