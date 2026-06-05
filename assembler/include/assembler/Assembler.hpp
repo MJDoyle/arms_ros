@@ -52,6 +52,11 @@ public:
 
     void setName(std::string name) { name_ = name; }
 
+    // Directory for all outputs of this pipeline run (e.g. "assembler_output/test_blocks/").
+    // Must end with '/'.  Created by the node before calling generateAssemblySequence().
+    void setRunOutputDir(const std::string& dir) { run_output_dir_ = dir; }
+    const std::string& getRunOutputDir() const   { return run_output_dir_; }
+
     void setGenerateGrasps(bool v) { generate_grasps_ = v; }
     void setGenerateJigs(bool v) { generate_jigs_ = v; }
     void setGeneratePath(bool v) { generate_path_ = v; }
@@ -158,6 +163,7 @@ private:
     double collision_volume_threshold_ = 0.0;
     float cradle_scaling_distance_ = 0.2f;
     ToolConfig tool_config_;
+    std::string run_output_dir_;
 
 };
 

@@ -1,4 +1,0 @@
-sensor_msgs/PointCloud2 cloud
-Circle circle
----
-float64 deviation

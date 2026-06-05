@@ -1,0 +1,18 @@
+# Place a part held by the vacuum gripper.
+#
+# The machine moves x/y first, then raises the bed through approach_z to
+# place_point.z to seat the part, releases vacuum, then lowers to retract_z.
+
+geometry_msgs/Point place_point    # x, y = toolhead XY; z = bed height at placement
+float64 approach_z                 # bed height for safe approach before placement
+float64 retract_z                  # bed height after release (clear of placed part)
+string part_id                     # planner part ID — sim backends only
+
+---
+
+bool success
+string message
+
+---
+
+string status  # "moving_xy" | "approaching" | "placing" | "releasing" | "retracting"

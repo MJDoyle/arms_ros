@@ -173,27 +173,22 @@ private:
 
   // ── Visualization helpers ───────────────────────────────────────────────
 
-  // Save every part's STL once to assembler_working/ and cache the paths.
+  // Save every part's STL once to the run output directory and cache the paths.
   // All publish methods use these paths — no disk I/O on the hot path.
-  // The run_index_ is included in the filename so each pipeline run gets unique
-  // URLs, preventing Foxglove from serving a cached STL from the previous run.
   void cache_part_stls()
   {
-    ++run_index_;
     part_stl_cache_.clear();
     auto target = assembler_->getTargetAssembly();
     if (!target) return;
+    const std::string dir = assembler_->getRunOutputDir();
     for (auto const& [part, transform] : target->getAssembledPartTransforms())
     {
-      std::string path = "assembler_working/vis_run_" + std::to_string(run_index_)
-                       + "_part_" + std::to_string(part->getId()) + ".stl";
+      std::string path = dir + "part_" + std::to_string(part->getId()) + ".stl";
 
       auto mesh = part->get_mesh_asset();
       if (mesh && !mesh->triangles.empty()) {
-        // Reuse the shared tessellation — no re-mesh per consumer (invariant 2).
         write_mesh_as_stl(*mesh, path);
       } else {
-        // Fallback for any part that didn't get a mesh asset at load time.
         TopoDS_Shape centred = ShapeSetCentroid(*part->getShape(), gp_Pnt(0, 0, 0));
         SaveShapeAsSTL(centred, path);
       }
@@ -400,7 +395,7 @@ private:
         continue;
 
       // Construct the jig STL path that CradleGenerator wrote
-      std::string stl_path = "assembler_output/jig_" + part->getName()
+      std::string stl_path = assembler_->getRunOutputDir() + "jig_" + part->getName()
           + "_size_" + std::to_string(BAY_SIZES[bay_size_idx])
           + "_index_" + std::to_string(bay_idx) + ".stl";
 
@@ -781,7 +776,12 @@ private:
     publish_status("Loading model: " + model_file);
     std::shared_ptr<Assembly> target_assembly = ModelLoader::loadModel(model_file);
 
-    assembler_->setName(std::filesystem::path(model_file).stem().string());
+    const std::string model_name    = std::filesystem::path(model_file).stem().string();
+    const std::string run_output_dir = "assembler_output/" + model_name + "/";
+    std::filesystem::create_directories(run_output_dir);
+
+    assembler_->setName(model_name);
+    assembler_->setRunOutputDir(run_output_dir);
     assembler_->setGenerateGrasps(generate_grasps);
     assembler_->setGenerateJigs(generate_jigs);
     assembler_->setGeneratePath(generate_path);
@@ -802,7 +802,7 @@ private:
     nozzle_stl_path_.clear();
     auto nozzle_mesh = assembler_->getNozzleMesh();
     if (nozzle_mesh && !nozzle_mesh->triangles.empty()) {
-      std::string nozzle_path = "assembler_working/nozzle_mesh.stl";
+      std::string nozzle_path = assembler_->getRunOutputDir() + "nozzle_mesh.stl";
       write_mesh_as_stl(*nozzle_mesh, nozzle_path);
       nozzle_stl_path_ = std::filesystem::absolute(nozzle_path).string();
     }
@@ -921,7 +921,6 @@ private:
   rclcpp::Service<assembler_msgs::srv::ListModels>::SharedPtr list_models_service_;
 
   std::atomic<bool> pipeline_running_{false};
-  int run_index_{0};
 
   // part id → absolute path of pre-saved STL
   std::map<size_t, std::string> part_stl_cache_;

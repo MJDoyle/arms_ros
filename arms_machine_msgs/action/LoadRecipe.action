@@ -1,0 +1,21 @@
+# Load an assembly recipe into the digital twin.
+#
+# Clears any previously loaded recipe prims from the stage, then spawns parts
+# and jigs from the assembler output directory for this model.  The simulation
+# is paused after loading so the initial layout can be inspected.
+#
+# Call this before /arms/execute_assembly.  The first motion action
+# (VacuumPick, VacuumPlace, etc.) will automatically resume the simulation.
+
+string output_dir   # absolute path to assembler_output/<model_name>/
+
+---
+
+bool success
+string message
+uint32 parts_loaded
+uint32 jigs_loaded
+
+---
+
+string status  # "clearing" | "loading_jigs" | "loading_parts" | "done"

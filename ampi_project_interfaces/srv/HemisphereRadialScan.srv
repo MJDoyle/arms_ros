@@ -1,6 +1,0 @@
-geometry_msgs/Point center
-float32 radius
-float32 phi
-int8 passes
----
-moveit_msgs/MotionSequenceRequest trajectory

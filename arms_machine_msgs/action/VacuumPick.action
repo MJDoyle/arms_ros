@@ -1,0 +1,22 @@
+# Pick a part using the vacuum gripper.
+#
+# Coordinate convention (matches ROS2 / machine frame):
+#   x, y  — toolhead position over the grasp contact point (metres)
+#   z      — bed height at the moment the nozzle contacts the part (metres)
+#
+# The machine moves x/y first, then raises the bed through approach_z to
+# contact_point.z to seal, then lowers to lift_z to transport the part.
+
+geometry_msgs/Point contact_point  # x, y = toolhead XY; z = bed height at contact
+float64 approach_z                 # bed height for safe approach before contact
+float64 lift_z                     # bed height after successful pick (transport height)
+string part_id                     # planner part ID — used by sim backends to move the correct prim; ignored by real machine
+
+---
+
+bool success
+string message
+
+---
+
+string status  # "moving_xy" | "approaching" | "contacting" | "lifting"

@@ -1,7 +1,0 @@
-unit32 index -1
----
-uint8 STEP_TYPE_PRINT=0
-uint8 STEP_TYPE_ROBOT=1
-uint8 step_type
-PrintStep print_step
-RobotStep robot_step

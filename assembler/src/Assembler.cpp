@@ -27,6 +27,7 @@
 #include <map>
 
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
 
 #include "assembler/Part.hpp"
@@ -112,7 +113,7 @@ void Assembler::saveAssemblyPath()
 
     std::stringstream ss;
 
-    ss << WORKING_DIR << name_ << "_cache.yaml";
+    ss << run_output_dir_ << name_ << "_cache.yaml";
 
     std::ofstream fout(ss.str());
 
@@ -124,7 +125,7 @@ bool Assembler::loadAssemblyPath()
 {
     std::stringstream ss;
 
-    ss << WORKING_DIR << name_ << "_cache.yaml";
+    ss << run_output_dir_ << name_ << "_cache.yaml";
 
     std::ifstream fin(ss.str());
     if (!fin) {
@@ -472,9 +473,9 @@ void Assembler::generateCommandFile(std::vector<size_t> part_addition_order)
 
     root["commands"] = commands;
 
-    std::ofstream fout(OUTPUT_DIR + "assembly_plan.yaml");
+    std::ofstream fout(run_output_dir_ + "assembly_plan.yaml");
 
-    std::cout << "Output path: " << OUTPUT_DIR + "assembly_plan.yaml" << std::endl;
+    std::cout << "Output path: " << run_output_dir_ + "assembly_plan.yaml" << std::endl;
 
     fout << root;
 
@@ -704,7 +705,7 @@ void Assembler::generateSlicerGcode()
 
         std::stringstream filename_ss;
 
-        filename_ss << WORKING_DIR << "internal_part_" << i << ".stl";
+        filename_ss << run_output_dir_ << "internal_part_" << i << ".stl";
 
         std::stringstream filename_local_ss;
 
@@ -721,7 +722,13 @@ void Assembler::generateSlicerGcode()
 
     std::stringstream command_ss;
 
-    command_ss << "(cd " << WORKING_DIR << " && " << "prusa-slicer --export-gcode --dont-arrange --merge --output assembler.gcode --load arms_prusa_config.ini";
+    // Use an absolute path for the config so it's still found after `cd run_output_dir_`.
+    const std::string abs_config =
+        std::filesystem::absolute(WORKING_DIR + "arms_prusa_config.ini").string();
+
+    command_ss << "(cd " << run_output_dir_ << " && "
+               << "prusa-slicer --export-gcode --dont-arrange --merge "
+               << "--output assembler.gcode --load " << abs_config;
     //command_ss << "(cd " << WORKING_DIR << " && " << "slic3r --dont-arrange --merge --output assembler.gcode --load arms_prusa_config.ini";
 
     for (std::string filename : filenames)
@@ -741,7 +748,7 @@ void Assembler::generateSlicerGcode()
 
     std::stringstream gcode_ss;
 
-    gcode_ss << WORKING_DIR << "assembler.gcode";
+    gcode_ss << run_output_dir_ << "assembler.gcode";
 
     //Load the GCode that Prusa writes
     std::ifstream gcodeFile(gcode_ss.str());
@@ -1321,7 +1328,7 @@ void Assembler::generateNegatives()
 
         JigGenerator cradle_gen(part->getName(), *part->getShape(), cradle_scaling_distance_);
 
-        float part_jig_z_offset = cradle_gen.createJig(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex());
+        float part_jig_z_offset = cradle_gen.createJig(BAY_SIZES[part->getBaySizeIndex()], part->getBayIndex(), run_output_dir_);
 
         RCLCPP_INFO(logger(), "Jig z offset (height above jig base): %f", part_jig_z_offset);
 

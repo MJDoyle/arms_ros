@@ -1,0 +1,22 @@
+# Insert a screw using the automatic screwdriver.
+# The screwdriver manages its own magazine — no separate load step required.
+#
+# The machine moves x/y over the hole, raises the bed through approach_z to
+# position.z to engage, drives the screw, then retracts.
+
+geometry_msgs/Point position       # x, y = toolhead XY over hole; z = bed height at engagement
+float64 approach_z                 # bed height for safe approach before engagement
+
+string screw_size                  # e.g. "M3", "M4"
+float64 length_mm                  # screw length (mm — fastener spec, not a distance)
+float64 target_torque_nm           # target installation torque
+
+---
+
+bool success
+string message
+float64 actual_torque_nm           # torque achieved at completion (0.0 if not measured)
+
+---
+
+string status  # "moving_xy" | "approaching" | "engaging" | "driving" | "retracting"

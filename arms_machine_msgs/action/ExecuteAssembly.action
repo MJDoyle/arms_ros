@@ -1,0 +1,18 @@
+# Execute an assembly plan produced by the ARMS planner.
+# The recipe builder reads the plan, translates each step into the appropriate
+# arms_machine_msgs action calls, and executes them in sequence.
+
+string assembly_plan_path  # path to assembly_plan.yaml — absolute, or relative to output_base_dir (recipe name also accepted)
+
+---
+
+bool success
+string message
+uint32 completed_steps
+uint32 total_steps
+
+---
+
+uint32 current_step
+uint32 total_steps
+string current_operation   # human-readable description of the step in progress

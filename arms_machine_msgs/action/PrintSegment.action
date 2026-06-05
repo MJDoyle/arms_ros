@@ -1,0 +1,16 @@
+# Execute a block of GCode through the printer (extruder tool).
+# Lines are sent to Klipper in order; the action completes when the last
+# line has been acknowledged.  On the digital twin, each line is interpreted
+# and the corresponding Articulation motion is executed.
+
+string[] gcode_lines
+
+---
+
+bool success
+string message
+
+---
+
+float32 progress     # fraction complete: 0.0 → 1.0
+string current_line  # the GCode line currently executing

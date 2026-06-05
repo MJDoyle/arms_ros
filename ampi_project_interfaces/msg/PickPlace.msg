@@ -1,4 +1,0 @@
-geometry_msgs/PoseStamped pick
-geometry_msgs/PoseStamped place
-float32 pick_lead
-float32 place_lead

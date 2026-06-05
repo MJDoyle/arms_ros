@@ -13,8 +13,8 @@ public:
     // The shape is in world coordinates relative to the part's current centroid position.
     TopoDS_Shape buildJigShape(float bay_size);
 
-    // Build jig, translate to JIG_CENTER_Z, write STL, return part-relative z offset.
-    float createJig(float bay_size, int bay_index);
+    // Build jig, translate to JIG_CENTER_Z, write STL to output_dir, return part-relative z offset.
+    float createJig(float bay_size, int bay_index, const std::string& output_dir);
 
 private:
     TopoDS_Shape shape_;

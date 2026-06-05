@@ -427,17 +427,13 @@ TopoDS_Shape JigGenerator::buildJigShape(float bay_size)
 // ===========================================================================
 // JigGenerator::createJig  — build geometry, translate to JIG_CENTER_Z, export
 // ===========================================================================
-float JigGenerator::createJig(float bay_size, int bay_index)
+float JigGenerator::createJig(float bay_size, int bay_index, const std::string& output_dir)
 {
     RCLCPP_INFO(logger(), "JigGenerator: %s  bay=%g #%d",
                 name_.c_str(), (double)bay_size, bay_index);
 
     TopoDS_Shape jig = buildJigShape(bay_size);
 
-    // Anchor the jig base plate at Z = 0 so every STL is consistent.
-    // jig_part_z_offset = part centroid height above the jig base plate.
-    // In the ARMS workspace the jig base sits at JIG_CENTER_Z, so the part's
-    // absolute Z = JIG_CENTER_Z + jig_part_z_offset.
     const double jig_lo = ShapeLowestPoint(jig);
     const float jig_part_z_offset =
         static_cast<float>(ShapeCentroid(shape_).Z() - jig_lo);
@@ -450,7 +446,7 @@ float JigGenerator::createJig(float bay_size, int bay_index)
     BRepMesh_IncrementalMesh(jig, 0.01).Perform();
 
     std::stringstream ss;
-    ss << OUTPUT_DIR << "jig_" << name_ << "_size_" << bay_size
+    ss << output_dir << "jig_" << name_ << "_size_" << bay_size
        << "_index_" << bay_index << ".stl";
     StlAPI_Writer().Write(jig, ss.str().c_str());
 

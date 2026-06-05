@@ -1,0 +1,15 @@
+# Transfer the work bed between the cartesian module and the FR3 arm module.
+
+uint8 TO_ARM_MODULE = 0  # extend bed into the arm module
+uint8 RETURN        = 1  # return bed to the cartesian module
+
+uint8 direction
+
+---
+
+bool success
+string message
+
+---
+
+string status  # "extending" | "retracting" | "locking"
